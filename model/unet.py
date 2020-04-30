@@ -6,7 +6,8 @@ from .submodules import \
     ConvLayer, UpsampleConvLayer, TransposedConvLayer, \
     RecurrentConvLayer, ResidualBlock, ConvLSTM, \
     ConvGRU, RecurrentResidualLayer
-from utils import myutil
+
+from .model_util import *
 
 
 class BaseUNet(nn.Module):
@@ -28,7 +29,7 @@ class BaseUNet(nn.Module):
         self.encoder_input_sizes = [int(self.base_num_channels * pow(channel_multiplier, i)) for i in range(self.num_encoders)]
         self.encoder_output_sizes = [int(self.base_num_channels * pow(channel_multiplier, i + 1)) for i in range(self.num_encoders)]
         self.max_num_channels = self.encoder_output_sizes[-1]
-        self.skip_ftn = getattr(myutil, 'skip_' + skip_type)
+        self.skip_ftn = eval('skip_' + skip_type)
         print('Using skip: {}'.format(self.skip_ftn))
         if use_upsample_conv:
             print('Using UpsampleConvLayer (slow, but no checkerboard artefacts)')

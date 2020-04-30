@@ -2,8 +2,9 @@ import argparse
 import torch
 import numpy as np
 from os.path import join
-import model.model as module_arch
-from parse_config import ConfigParser
+
+from .model import model as model_arch
+from .utils.parse_config import ConfigParser
 
 
 def load_model(args, checkpoint):
@@ -13,7 +14,7 @@ def load_model(args, checkpoint):
     state_dict = checkpoint['state_dict']
 
     # build model architecture
-    model = config.init_obj('arch', module_arch)
+    model = config.init_obj('arch', model_arch)
     model.load_state_dict(state_dict)
     print(model)
 
@@ -23,6 +24,7 @@ def save_model(model, savepath):
     script = torch.jit.script(model)
     print("save to {}".format(savepath))
     torch.jit.save(script, savepath)    
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch Template')

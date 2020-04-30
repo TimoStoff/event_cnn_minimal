@@ -3,8 +3,10 @@ import copy
 import torch.nn as nn
 import torch.nn.functional as F
 # local modules
-from base import BaseModel
-from utils.myutil import CropParameters, recursive_clone
+
+from .model_util import CropParameters, recursive_clone
+from .base.base_model import BaseModel
+
 from .unet import UNetFlow, WNet, UNetFlowNoRecur, UNetRecurrent, UNet
 from .submodules import ResidualBlock, ConvGRU, ConvLayer
 

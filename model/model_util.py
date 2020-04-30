@@ -4,8 +4,7 @@ from math import fabs, ceil, floor
 import torch
 import os
 from torch.nn import ZeroPad2d
-from parse_config import ConfigParser
-from utils.default_config import default_config
+from .default_config import default_config
 
 
 def skip_concat(x1, x2):
