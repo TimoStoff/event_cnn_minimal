@@ -1,0 +1,112 @@
+{
+    "name": "evflownet",
+    "n_gpu": 1,
+    "arch": {
+        "type": "EVFlowNet",
+        "args": {
+            "unet_kwargs": {
+                "num_bins": 5,
+                "base_num_channels": 32,
+                "num_encoders": 4,
+                "num_residual_blocks": 2,
+                "num_output_channels": 2,
+                "skip_type": "concat",
+                "norm": null,
+                "use_upsample_conv": true,
+                "kernel_size": 3,
+                "channel_multiplier": 2
+            }
+        }
+    },
+    "data_loader": {
+        "type": "DynamicH5DataLoader",
+        "args": {
+            "data_file": "/tmp/extracted_data/data_file.txt",
+            "batch_size": 32,
+            "shuffle": true,
+            "num_workers": 1,
+            "pin_memory": true,
+            "sequence_kwargs": {
+                "sequence_length": 8,
+                "dataset_type": "DynamicH5Dataset",
+                "proba_pause_when_running": 0.0,
+                "proba_pause_when_paused": 0.0,
+                "normalize_image": false,
+                "noise_kwargs": {
+                    "noise_std": 0.0,
+                    "noise_fraction": 0.0
+                },
+                "hot_pixel_kwargs": {
+                    "hot_pixel_std": 0.0,
+                    "max_hot_pixel_fraction": 0.0
+                },
+                "dataset_kwargs": {
+                    "transforms": {
+                        "RandomCrop": {
+                            "size": 128
+                        },
+                        "RandomFlip": {},
+                        "RobustNorm": {}
+                    }
+                }
+            }
+        }
+    },
+    "valid_data_loader": {
+        "type": "DynamicH5DataLoader",
+        "args": {
+            "data_file": "/tmp/extracted_data/data_file.txt",
+            "batch_size": 16,
+            "shuffle": false,
+            "num_workers": 1,
+            "pin_memory": true,
+            "sequence_kwargs": {
+                "sequence_length": 160,
+                "dataset_type": "DynamicH5Dataset",
+                "normalize_image": true,
+                "dataset_kwargs": {
+                    "max_length": 320,
+                    "transforms": {
+                        "CenterCrop": {
+                            "size": 160
+                        },
+                        "RobustNorm": {}
+                    }
+                }
+            }
+        }
+    },
+    "optimizer": {
+        "type": "Adam",
+        "args": {
+            "lr": 0.0001,
+            "weight_decay": 0,
+            "amsgrad": true
+        }
+    },
+    "loss_ftns": {
+        "flow_l1_loss": {
+            "weight": 0.0
+        },
+        "warping_flow_loss": {
+            "weight": 10.0
+        }
+    },
+    "lr_scheduler": {
+        "type": "StepLR",
+        "args": {
+            "step_size": 50,
+            "gamma": 1.0
+        }
+    },
+    "trainer": {
+        "epochs": 500,
+        "save_dir": "/tmp/test",
+        "save_period": 1,
+        "verbosity": 2,
+        "monitor": "min loss",
+        "num_previews": 4,
+        "val_num_previews": 8,
+        "tensorboard": true
+    }
+}
