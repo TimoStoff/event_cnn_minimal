@@ -1,7 +1,7 @@
 # event_cnn_minimal
 Minimal code for running inference on models trained for ECCV'20.
 
-# Installation with [Anaconda](https://docs.anaconda.com/anaconda/install/)
+# Running with [Anaconda](https://docs.anaconda.com/anaconda/install/)
 ```
 cuda_version=10.1
 
