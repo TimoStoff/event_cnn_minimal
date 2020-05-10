@@ -3,7 +3,7 @@ Minimal code for running inference on models trained for ECCV'20.
 
 # Usage
 
-Clone this repo and subodules:
+Clone this repo and submodules:
 ```
 git clone -b inference git@github.com:TimoStoff/event_cnn_minimal.git --recursive
 ```
