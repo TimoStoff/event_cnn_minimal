@@ -1,6 +1,17 @@
 # event_cnn_minimal
 Minimal code for running inference on models trained for ECCV'20.
 
+# Installation with [Anaconda](https://docs.anaconda.com/anaconda/install/)
+```
+cuda_version=10.1
+
+conda create -y -n event_cnn python=3.7
+conda activate event_cnn
+conda install -y pytorch torchvision cudatoolkit=$cuda_version -c pytorch
+conda install -y -c conda-forge opencv
+conda install -y -c conda-forge tqdm
+conda install -y -c anaconda h5py 
+```
 # Usage
 
 Clone this repo and submodules:
