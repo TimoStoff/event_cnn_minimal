@@ -57,7 +57,7 @@ python inference.py --checkpoint_path <path/to/model.pth> --device 0 --h5_file_p
 ```
 For example:
 ```
-python inference.py --checkpoint_path pretrained/flow/flow_model.pth --device 0 --h5_file_path /tmp/h5_events/slider_depth.h5 --output_folder /tmp/reconstruction --legacy --is_flow
+python inference.py --checkpoint_path pretrained/flow/flow_model.pth --device 0 --h5_file_path /tmp/h5_events/slider_depth.h5 --output_folder /tmp/flow --legacy --is_flow
 ```
 Flow is saved as both a png showing HSV color as slow vectors and as npy files.
 
