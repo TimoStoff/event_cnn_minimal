@@ -12,6 +12,7 @@ conda install -y -c conda-forge opencv
 conda install -y -c conda-forge tqdm
 conda install -y -c anaconda h5py 
 ```
+As a further prerequisite, you will need to have [ROS](http://wiki.ros.org/kinetic/Installation/Ubuntu) installed on your system. Make sure not to source your ROS and Conda envs at the same time, as they conflict.
 # Usage
 
 Clone this repo and submodules:
@@ -25,13 +26,15 @@ mkdir pretrained
 cd pretrained
 wget <url>
 ```
-This code processes the events in HDF5 format. To convert the rosbags to this format, run
+This code processes the events in HDF5 format. To convert the rosbags to this format, open a new terminal and source a ROS workspace.
 ```
+source /opt/ros/kinetic/setup.bash
 python events_contrast_maximization/tools/rosbag_to_h5.py <path/to/rosbag/or/dir/with/rosbags> --output_dir <path/to/save_h5_events> --event_topic <event_topic> --image_topic <image_topic>
 ```
 As an example, using [`slider_depth`](http://rpg.ifi.uzh.ch/datasets/davis/slider_depth.bag) from "The event camera dataset and simulator":
 ```
 wget http://rpg.ifi.uzh.ch/datasets/davis/slider_depth.bag /tmp/
+source /opt/ros/kinetic/setup.bash
 python events_contrast_maximization/tools/rosbag_to_h5.py /tmp/slider_depth.bag --output_dir /tmp/h5_events --event_topic /dvs/events --image_topic /dvs/image_raw
 ```
 To estimate reconstruction:
