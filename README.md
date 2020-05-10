@@ -11,6 +11,9 @@ conda install -y pytorch torchvision cudatoolkit=$cuda_version -c pytorch
 conda install -y -c conda-forge opencv
 conda install -y -c conda-forge tqdm
 conda install -y -c anaconda h5py 
+conda install -y -c intel pandas
+conda install -y -c anaconda scikit-image
+pip install thop --user
 ```
 As a further prerequisite, you will need to have [ROS](http://wiki.ros.org/kinetic/Installation/Ubuntu) installed on your system. Make sure not to source your ROS and Conda envs at the same time, as they conflict.
 # Usage
@@ -18,6 +21,9 @@ As a further prerequisite, you will need to have [ROS](http://wiki.ros.org/kinet
 Clone this repo and submodules:
 ```
 git clone -b inference git@github.com:TimoStoff/event_cnn_minimal.git --recursive
+cd event_cnn_minimal/events_contrast_maximization/
+git checkout master
+cd ..
 ```
 Download the pretrained models:
 ```
