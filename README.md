@@ -59,3 +59,16 @@ Flow is saved as both a png showing HSV color as slow vectors and as npy files. 
 ![Flow](.readme/flow.gif)
 
 Note that the models reported on in the preprint ["How to Train Your Event Camera Neural Network](https://arxiv.org/abs/2003.09078) loaded the voxels in a slightly different way to the updated version. Hence when running inference on those models, the `--legacy` flag is necessary. Updated models are denoted by the prefix `update_` and don't require this flag to be set.
+
+# Citations
+Please cite the following if you decide to use this code in an academic context:
+```
+@misc{stoffregen2020train,
+    title={How to Train Your Event Camera Neural Network},
+    author={Timo Stoffregen and Cedric Scheerlinck and Davide Scaramuzza and Tom Drummond and Nick Barnes and Lindsay Kleeman and Robert Mahony},
+    year={2020},
+    eprint={2003.09078},
+    archivePrefix={arXiv},
+    primaryClass={cs.CV}
+}
+```
