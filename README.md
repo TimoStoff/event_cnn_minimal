@@ -25,13 +25,6 @@ cd event_cnn_minimal/events_contrast_maximization/
 git checkout master
 cd ..
 ```
-Download the pretrained models:
-```
-cd event_cnn_minimal
-mkdir pretrained
-cd pretrained
-wget <url>
-```
 This code processes the events in HDF5 format. To convert the rosbags to this format, open a new terminal and source a ROS workspace.
 ```
 source /opt/ros/kinetic/setup.bash
@@ -43,6 +36,8 @@ wget http://rpg.ifi.uzh.ch/datasets/davis/slider_depth.bag -O /tmp/slider_depth.
 source /opt/ros/kinetic/setup.bash
 python events_contrast_maximization/tools/rosbag_to_h5.py /tmp/slider_depth.bag --output_dir /tmp/h5_events --event_topic /dvs/events --image_topic /dvs/image_raw
 ```
+Download the pretrained models from [here](https://drive.google.com/open?id=1J6PbqYPOGlyspYsdH4fgg5pZpc_l-BOD), into event_cnn_minimal.
+
 To estimate reconstruction:
 ```
 python inference.py --checkpoint_path <path/to/model.pth> --device 0 --h5_file_path </path/to/events.h5> --output_folder </path/to/output/dir>
