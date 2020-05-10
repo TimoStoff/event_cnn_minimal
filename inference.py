@@ -80,9 +80,9 @@ def main(args, model):
                 flow_t = torch.squeeze(crop.crop(output['flow']))
                 flow = flow_t.cpu().numpy()
                 ts = item['timestamp'].cpu().numpy()
-                flow = {'flow':flow, 'ts':ts}
-                fname = 'flow_{:010d}.yml'.format(i)
-                np.save(fname, flow)
+                flow_dict = {'flow':flow, 'ts':ts}
+                fname = 'flow_{:010d}.npy'.format(i)
+                np.save(os.path.join(args.output_folder, fname), flow_dict)
                 with open(os.path.join(args.output_folder, fname), "a") as myfile:
                     myfile.write("\n")
                     myfile.write("timestamp: {:.10f}".format(ts[0]))
