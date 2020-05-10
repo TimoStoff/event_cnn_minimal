@@ -50,9 +50,10 @@ def main(args, model):
                       'num_bins': 5,
                       'voxel_method': {'method':'between_frames'}
                       }
-    if args.is_flow:
+    if not args.legacy:
         dataset_kwargs['transforms'] = {'RobustNorm':{}}
         dataset_kwargs['combined_voxel_channels'] = False
+
     data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs)
 
     for d in data_loader:
@@ -78,12 +79,10 @@ def main(args, model):
             if args.is_flow:
                 flow_t = torch.squeeze(crop.crop(output['flow']))
                 flow = flow_t.cpu().numpy()
-                fname = 'flow_{:010d}.yml'.format(i)
-                fs = cv2.FileStorage(os.path.join(args.output_folder, fname), cv2.FILE_STORAGE_WRITE)
-                fs.write('flow_x', flow[0,:,:])
-                fs.write('flow_y', flow[1,:,:])
                 ts = item['timestamp'].cpu().numpy()
-                fs.release()
+                flow = {'flow':flow, 'ts':ts}
+                fname = 'flow_{:010d}.yml'.format(i)
+                np.save(fname, flow)
                 with open(os.path.join(args.output_folder, fname), "a") as myfile:
                     myfile.write("\n")
                     myfile.write("timestamp: {:.10f}".format(ts[0]))
@@ -118,7 +117,9 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='0', type=str,
                       help='indices of GPUs to enable')
     parser.add_argument('--is_flow', action='store_true',
-            help='If true, save output to flow yml file')
+            help='If true, save output to flow npy file')
+    parser.add_argument('--legacy', action='store_true',
+            help='Set this if using any of the original networks from ECCV20 paper')
 
     args = parser.parse_args()
     
@@ -129,5 +130,27 @@ if __name__ == '__main__':
     checkpoint = torch.load(args.checkpoint_path)
     kwargs['checkpoint'] = checkpoint
 
+    #import h5py
+    #dataset_kwargs = {'transforms': {},
+    #                  'max_length': None,
+    #                  'sensor_size': None,
+    #                  'num_bins': 5,
+    #                  'legacy': True,
+    #                  'voxel_method': {'method':'between_frames'}
+    #                  }
+    #h5_path = "/home/timo/Data2/preprocessed_datasets/h5_voxels/slider_depth_cut.h5"
+    #data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs)
+    #h5_file = h5py.File(h5_path, 'r')
+    #for i, item in enumerate(data_loader):
+    #    data_name = "frame_{:09d}".format(i)
+    #    dset = h5_file[data_name]
+    #    voxel = np.stack([bin[:] for bin in dset['voxels'].values()], axis=0)  # C x H x W
+    #    new_voxel = item['events']
+
+    #    if True:
+    #        print(np.sum(voxel))
+    #        print(torch.sum(new_voxel))
+    #        #print(voxel)
+    #        #print(new_voxel)
     model = load_model(args, **kwargs)
     main(args, model)

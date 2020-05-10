@@ -8,7 +8,8 @@ import h5py
 # local modules
 from utils.data_augmentation import RobustNorm, Compose
 from utils.data import data_sources
-from events_contrast_maximization.utils.event_utils import events_to_voxel_torch, events_to_neg_pos_voxel_torch
+from events_contrast_maximization.utils.event_utils import events_to_voxel_torch, \
+        events_to_neg_pos_voxel_torch, binary_search_torch_tensor, events_to_image_torch
 
 
 class DynamicH5Dataset(Dataset):
@@ -41,7 +42,8 @@ class DynamicH5Dataset(Dataset):
             method={'method':'k_events', 'k':10000, 'sliding_window_w':10000}
     """
     def __init__(self, h5_path, transforms={}, sensor_size=None, num_bins=5,
-            voxel_method={'method':'between_frames'}, max_length=None, combined_voxel_channels=True):
+            voxel_method={'method':'between_frames'}, max_length=None, combined_voxel_channels=True,
+            legacy=False):
         self.h5_path = h5_path
         try:
             self.h5_file = h5py.File(h5_path, 'r')
@@ -97,6 +99,7 @@ class DynamicH5Dataset(Dataset):
         if max_length is not None:
             self.length = min(self.length, max_length + 1)
         self.combined_voxel_channels = combined_voxel_channels
+        self.legacy = legacy
 
     def __len__(self):
         return self.length
@@ -121,6 +124,38 @@ class DynamicH5Dataset(Dataset):
             flow = self.transform(flow, is_flow=True)
         return flow
 
+    def events_to_voxel_legacy(self, xs, ys, ts, ps, B, sensor_size=(180, 240), device=None):
+        if device is None:
+            device = xs.device
+        assert(len(xs)==len(ys) and len(ys)==len(ts) and len(ts)==len(ps))
+        num_events_per_bin = len(xs)//B
+        bins = []
+        dt = ts[-1]-ts[0]
+
+        bins = []
+        for bi in range(B):
+           bins.append(torch.zeros(list(sensor_size), device=device)) 
+
+        bin_time_width = dt/(B-1.0)
+        lower_bin_ts = ts[0]
+        upper_bin_ts = lower_bin_ts + bin_time_width
+        for bi in range(B-1):
+            beg = binary_search_torch_tensor(ts, 0, len(ts)-1, lower_bin_ts)
+            end = binary_search_torch_tensor(ts, 0, len(ts)-1, upper_bin_ts)-1
+
+            factor_upper = (ts-lower_bin_ts)/bin_time_width
+            factor_lower = 1.0-factor_upper
+            
+            bins[bi] = bins[bi]+events_to_image_torch(xs[beg:end], ys[beg:end], (factor_lower*ps)[beg:end],
+                    device=device, sensor_size=sensor_size, clip_out_of_range=True)
+            bins[bi+1] = bins[bi+1]+events_to_image_torch(xs[beg:end], ys[beg:end], (factor_upper*ps)[beg:end],
+                    device=device, sensor_size=sensor_size, clip_out_of_range=True)
+            lower_bin_ts += bin_time_width
+            upper_bin_ts += bin_time_width
+
+        bins = torch.stack(bins)
+        return bins
+
     def __getitem__(self, i, seed=None):
         assert(i>=0)
         assert(i<self.length)
@@ -136,6 +171,9 @@ class DynamicH5Dataset(Dataset):
         if self.voxel_method['method'] == 'between_frames':
             events_start_idx = self.h5_file['images']['image{:09d}'.format(i)].attrs['event_idx']+1
             events_end_idx = img_dset.attrs['event_idx']
+            if self.legacy:
+                events_start_idx = self.h5_file['images']['image{:09d}'.format(i)].attrs['event_idx']
+                events_end_idx = self.h5_file['images']['image{:09d}'.format(i+1)].attrs['event_idx']
         elif self.voxel_method['method'] == 'k_events':
             events_start_idx = i*self.voxel_method['sliding_window_w']
             events_end_idx = self.voxel_method['k']+events_start_idx
@@ -145,12 +183,15 @@ class DynamicH5Dataset(Dataset):
         xs = torch.from_numpy((self.h5_file['events/xs'][events_start_idx:events_end_idx]).astype(np.float32))  # H x W
         ys = torch.from_numpy((self.h5_file['events/ys'][events_start_idx:events_end_idx]).astype(np.float32))  # H x W
         ts = torch.from_numpy((self.h5_file['events/ts'][events_start_idx:events_end_idx]-self.t0).astype(np.float32))  # H x W
-        ps = torch.from_numpy((self.h5_file['events/ps'][events_start_idx:events_end_idx]).astype(np.float32))  # H x W
-        if self.combined_voxel_channels:
-            voxel = events_to_voxel_torch(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_size).float()
+        ps = torch.from_numpy((self.h5_file['events/ps'][events_start_idx:events_end_idx]*2-1).astype(np.float32))  # H x W
+        if self.legacy:
+            voxel = self.events_to_voxel_legacy(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_size).float()
         else:
-            voxel = events_to_neg_pos_voxel_torch(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_size)
-            voxel = torch.cat([voxel[0], voxel[1]], dim=0).float()
+            if self.combined_voxel_channels:
+                voxel = events_to_voxel_torch(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_size).float()
+            else:
+                voxel = events_to_neg_pos_voxel_torch(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_size)
+                voxel = torch.cat([voxel[0], voxel[1]], dim=0).float()
 
         if seed is None:
             seed = random.randint(0, 2**32)
