@@ -60,7 +60,7 @@ For example:
 python inference.py --checkpoint_path pretrained/flow/flow_model.pth --device 0 --h5_file_path /tmp/h5_events/slider_depth.h5 --output_folder /tmp/flow --legacy --is_flow
 ```
 Flow is saved as both a png showing HSV color as slow vectors and as npy files. Should look something like this:
-![Reconstruction](.readme/reconstruction.gif)
+![Reconstruction](.readme/reonstruction.gif)
 ![Flow](.readme/flow.gif)
 
 Note that the models reported on in the preprint ["How to Train Your Event Camera Neural Network](https://arxiv.org/abs/2003.09078) loaded the voxels in a slightly different way to the updated version. Hence when running inference on those models, the `--legacy` flag is necessary. Updated models are denoted by the prefix `update_` and don't require this flag to be set.
