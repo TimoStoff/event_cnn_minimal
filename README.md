@@ -33,7 +33,7 @@ python events_contrast_maximization/tools/rosbag_to_h5.py <path/to/rosbag/or/dir
 ```
 As an example, using [`slider_depth`](http://rpg.ifi.uzh.ch/datasets/davis/slider_depth.bag) from "The event camera dataset and simulator":
 ```
-wget http://rpg.ifi.uzh.ch/datasets/davis/slider_depth.bag /tmp/
+wget http://rpg.ifi.uzh.ch/datasets/davis/slider_depth.bag -O /tmp/slider_depth.bag
 source /opt/ros/kinetic/setup.bash
 python events_contrast_maximization/tools/rosbag_to_h5.py /tmp/slider_depth.bag --output_dir /tmp/h5_events --event_topic /dvs/events --image_topic /dvs/image_raw
 ```
