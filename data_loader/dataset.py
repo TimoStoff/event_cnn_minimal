@@ -165,14 +165,14 @@ class DynamicH5Dataset(Dataset):
         assert (i >= 0)
         assert (i < self.length)
 
-        try:
-            dset = self.h5_file
-            img_dset = self.h5_file['images']['image{:09d}'.format(i + 1)]
-        except Exception as e:
-            print("Incorrect index: {}".format(e))
-            raise e
-
         if self.voxel_method['method'] == 'between_frames':
+            try:
+                dset = self.h5_file
+                img_dset = self.h5_file['images']['image{:09d}'.format(i + 1)]
+            except Exception as e:
+                print("Incorrect index: {}".format(e))
+                raise e
+
             timestamp = img_dset.attrs['timestamp']
 
             if self.legacy:
@@ -216,24 +216,31 @@ class DynamicH5Dataset(Dataset):
         if seed is None:
             seed = random.randint(0, 2 ** 32)
 
-        frame = img_dset[:]  # H x W
-
-        frame = self.transform_frame(frame, seed)
         voxel = self.transform_voxel(voxel, seed)
 
-        if dset.attrs['num_flow'] == dset.attrs['num_imgs']:
-            flow = self.h5_file['flow']['flow{:09d}'.format(i + 1)][:]
-            flow = self.transform_flow(flow, seed)
-            # convert to displacement (pix)
-            dt = events_end_idx - events_start_idx
-            flow *= dt
-        else:
-            flow = torch.zeros((2, frame.shape[-2], frame.shape[-1]),
-                               dtype=frame.dtype, device=frame.device)
+        if self.voxel_method['method'] == 'between_frames':
+            frame = img_dset[:]  # H x W
 
-        item = {'frame': frame,
-                'flow': flow,
-                'events': voxel,
-                'timestamp': timestamp,
-                'data_source_idx': self.data_source_idx}
+            frame = self.transform_frame(frame, seed)
+
+            if dset.attrs['num_flow'] == dset.attrs['num_imgs']:
+                flow = self.h5_file['flow']['flow{:09d}'.format(i + 1)][:]
+                flow = self.transform_flow(flow, seed)
+                # convert to displacement (pix)
+                dt = events_end_idx - events_start_idx
+                flow *= dt
+            else:
+                flow = torch.zeros((2, frame.shape[-2], frame.shape[-1]),
+                                   dtype=frame.dtype, device=frame.device)
+
+            item = {'frame': frame,
+                    'flow': flow,
+                    'events': voxel,
+                    'timestamp': timestamp,
+                    'data_source_idx': self.data_source_idx}
+        else:
+            item = {'events': voxel,
+                    'timestamp': timestamp,
+                    'data_source_idx': self.data_source_idx}
+
         return item
