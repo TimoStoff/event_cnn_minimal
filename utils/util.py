@@ -8,25 +8,30 @@ from collections import OrderedDict
 from math import fabs, ceil, floor
 from torch.nn import ZeroPad2d
 
+
 def ensure_dir(dirname):
     dirname = Path(dirname)
     if not dirname.is_dir():
         dirname.mkdir(parents=True, exist_ok=False)
+
 
 def read_json(fname):
     fname = Path(fname)
     with fname.open('rt') as handle:
         return json.load(handle, object_hook=OrderedDict)
 
+
 def write_json(content, fname):
     fname = Path(fname)
     with fname.open('wt') as handle:
         json.dump(content, handle, indent=4, sort_keys=False)
 
+
 def inf_loop(data_loader):
     ''' wrapper function for endless data loader. '''
     for loader in repeat(data_loader):
         yield from loader
+
 
 def optimal_crop_size(max_size, max_subsample_factor, safety_margin=0):
     """ Find the optimal crop size for a given max_size and subsample_factor.
@@ -36,6 +41,7 @@ def optimal_crop_size(max_size, max_subsample_factor, safety_margin=0):
     crop_size = int(pow(2, max_subsample_factor) * ceil(max_size / pow(2, max_subsample_factor)))
     crop_size += safety_margin * pow(2, max_subsample_factor)
     return crop_size
+
 
 class CropParameters:
     """ Helper class to compute and store useful parameters for pre-processing and post-processing
@@ -73,11 +79,12 @@ class CropParameters:
 def format_power(size):
     power = 1e3
     n = 0
-    power_labels = {0 : '', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
+    power_labels = {0: '', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
     while size > power:
         size /= power
         n += 1
     return size, power_labels[n]
+
 
 def flow2bgr_np(disp_x, disp_y, max_magnitude=None):
     """
@@ -85,7 +92,7 @@ def flow2bgr_np(disp_x, disp_y, max_magnitude=None):
     Code adapted from: https://github.com/ClementPinard/FlowNetPytorch/blob/master/main.py#L339
 
     :param disp_x: a [H x W] NumPy array containing the X displacement
-    :param disp_x: a [H x W] NumPy array containing the Y displacement
+    :param disp_y: a [H x W] NumPy array containing the Y displacement
     :returns bgr: a [H x W x 3] NumPy array containing a color-coded representation of the flow [0, 255]
     """
     assert(disp_x.shape == disp_y.shape)

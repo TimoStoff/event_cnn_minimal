@@ -1,19 +1,16 @@
 import torch
-import torch.nn.functional as F
-from math import sin, cos, pi
 import numbers
-import numpy as np
-import random
-from typing import Union
+import torchvision.transforms
+
 
 class Compose(object):
     """Composes several transforms together.
     Args:
         transforms (list of ``Transform`` objects): list of transforms to compose.
     Example:
-        >>> transforms.Compose([
-        >>>     transforms.CenterCrop(10),
-        >>>     transforms.ToTensor(),
+        >>> torchvision.transforms.Compose([
+        >>>     torchvision.transforms.CenterCrop(10),
+        >>>     torchvision.transforms.ToTensor(),
         >>> ])
     """
 
@@ -84,7 +81,8 @@ class RobustNorm(object):
         self.top_perc = top_perc
         self.low_perc = low_perc
 
-    def percentile(self, t, q):
+    @staticmethod
+    def percentile(t, q):
         """
         Return the ``q``-th percentile of the flattened input tensor's data.
         
@@ -112,7 +110,7 @@ class RobustNorm(object):
         """
         t_max = self.percentile(x, self.top_perc)
         t_min = self.percentile(x, self.low_perc)
-        #print("t_max={}, t_min={}".format(t_max, t_min))
+        # print("t_max={}, t_min={}".format(t_max, t_min))
         if t_max == 0 and t_min == 0:
             return x
         eps = 1e-6

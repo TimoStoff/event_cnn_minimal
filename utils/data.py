@@ -2,7 +2,6 @@ import os
 import pandas as pd
 from tqdm import tqdm
 from torch.utils.data import ConcatDataset
-from collections import namedtuple
 
 
 data_sources = ('esim', 'ijrr', 'mvsec', 'eccd', 'hqfd', 'unknown')
@@ -27,15 +26,18 @@ def concatenate_subfolders(data_file, dataset, dataset_kwargs):
     return ConcatDataset(datasets)
 
 
-def concatenate_datasets(data_file, dataset_type, dataset_kwargs={}):
+def concatenate_datasets(data_file, dataset_type, dataset_kwargs=None):
     """
     Generates a dataset for each cti_path specified in data_file and concatenates the datasets.
     :param data_file: A file containing a list of paths to CTI h5 files.
                       Each file is expected to have a sequence of frame_{:09d}
     :param dataset_type: Pointer to dataset class
-    :param sequence_length: Desired length of each sequence
+    :param dataset_kwargs: Dataset keyword arguments
     :return ConcatDataset: concatenated dataset of all cti_paths in data_file
     """
+    if dataset_kwargs is None:
+        dataset_kwargs = {}
+
     cti_paths = pd.read_csv(data_file, header=None).values.flatten().tolist()
     dataset_list = []
     print('Concatenating {} datasets'.format(dataset_type))
@@ -44,14 +46,18 @@ def concatenate_datasets(data_file, dataset_type, dataset_kwargs={}):
         dataset_list.append(dataset_type(**dataset_kwargs))
     return ConcatDataset(dataset_list)
 
-def concatenate_memmap_datasets(data_file, dataset_type, dataset_kwargs={}):
+
+def concatenate_memmap_datasets(data_file, dataset_type, dataset_kwargs):
     """
     Generates a dataset for each memmap_path specified in data_file and concatenates the datasets.
     :param data_file: A file containing a list of paths to memmap root dirs.
     :param dataset_type: Pointer to dataset class
-    :param sequence_length: Desired length of each sequence
+    :param dataset_kwargs: Dataset keyword arguments
     :return ConcatDataset: concatenated dataset of all memmap_paths in data_file
     """
+    if dataset_kwargs is None:
+        dataset_kwargs = {}
+
     memmap_paths = pd.read_csv(data_file, header=None).values.flatten().tolist()
     dataset_list = []
     print('Concatenating {} datasets'.format(dataset_type))
