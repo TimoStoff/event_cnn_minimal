@@ -9,7 +9,6 @@ from tqdm import tqdm
 
 from utils.util import ensure_dir, flow2bgr_np
 from model import model as model_arch
-from utils.parse_config import ConfigParser
 from data_loader.data_loaders import InferenceDataLoader
 from utils.util import CropParameters
 from utils.timers import CudaTimer
@@ -17,7 +16,8 @@ from utils.timers import CudaTimer
 model_info = {}
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def load_model(args, checkpoint):
+
+def load_model(checkpoint):
     config = checkpoint['config']
     state_dict = checkpoint['state_dict']
 
@@ -43,22 +43,29 @@ def load_model(args, checkpoint):
 
 
 def main(args, model):
-
     dataset_kwargs = {'transforms': {},
                       'max_length': None,
                       'sensor_size': None,
                       'num_bins': 5,
-                      'voxel_method': {'method':'between_frames'}
+                      'voxel_method': {'method': args.voxel_method,
+                                       'k': args.k,
+                                       't': args.t,
+                                       'sliding_window_w': args.sliding_window_w,
+                                       'sliding_window_t': args.sliding_window_t}
                       }
     if not args.legacy:
-        dataset_kwargs['transforms'] = {'RobustNorm':{}}
+        dataset_kwargs['transforms'] = {'RobustNorm': {}}
         dataset_kwargs['combined_voxel_channels'] = False
 
     data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs)
 
+    height, width = None, None
     for d in data_loader:
         height, width = d['events'].shape[-2:]
         break
+    if height is None or width is None:
+        raise Exception("Could not determine width+height")
+
     model_info['input_shape'] = height, width
     crop = CropParameters(width, height, model.num_encoders)
 
@@ -80,13 +87,13 @@ def main(args, model):
                 flow_t = torch.squeeze(crop.crop(output['flow']))
                 flow = flow_t.cpu().numpy()
                 ts = item['timestamp'].cpu().numpy()
-                flow_dict = {'flow':flow, 'ts':ts}
+                flow_dict = {'flow': flow, 'ts': ts}
                 fname = 'flow_{:010d}.npy'.format(i)
                 np.save(os.path.join(args.output_folder, fname), flow_dict)
                 with open(os.path.join(args.output_folder, fname), "a") as myfile:
                     myfile.write("\n")
                     myfile.write("timestamp: {:.10f}".format(ts[0]))
-                flow_img = flow2bgr_np(flow[0,:,:], flow[1,:,:])
+                flow_img = flow2bgr_np(flow[0, :, :], flow[1, :, :])
                 fname = 'flow_{:010d}.png'.format(i)
                 cv2.imwrite(os.path.join(args.output_folder, fname), flow_img)
             else:
@@ -97,29 +104,41 @@ def main(args, model):
                 image = (image * 255).astype(np.uint8)
                 fname = 'frame_{:010d}.png'.format(i)
                 cv2.imwrite(join(args.output_folder, fname), image)
-            ts_file.write('{} {:.15f}\n'.format(fname, item['timestamp'].item()))
+            ts_file.write('{:.15f}\n'.format(item['timestamp'].item()))
 
 
-def print_model_info():
-    print('Input shape: {} x {} x {}'.format(model_info.pop('num_bins'), *model_info.pop('input_shape')))
-    print('== Model statistics ==')
-    for k, v in model_info.items():
-        print('{}: {:.2f} {}'.format(k, *format_power(v)))
+# def print_model_info():
+#     print('Input shape: {} x {} x {}'.format(model_info.pop('num_bins'), *model_info.pop('input_shape')))
+#     print('== Model statistics ==')
+#     for k, v in model_info.items():
+#         print('{}: {:.2f} {}'.format(k, *format_power(v)))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch Template')
     parser.add_argument('--checkpoint_path', required=True, type=str,
-                      help='path to latest checkpoint (default: None)')
+                        help='path to latest checkpoint (default: None)')
     parser.add_argument('--h5_file_path', required=True, type=str,
-                      help='path to hdf5 events')
+                        help='path to hdf5 events')
     parser.add_argument('--output_folder', default="/tmp/output", type=str,
-                      help='where to save outputs to')
+                        help='where to save outputs to')
     parser.add_argument('--device', default='0', type=str,
-                      help='indices of GPUs to enable')
+                        help='indices of GPUs to enable')
     parser.add_argument('--is_flow', action='store_true',
-            help='If true, save output to flow npy file')
+                        help='If true, save output to flow npy file')
     parser.add_argument('--legacy', action='store_true',
-            help='Set this if using any of the original networks from ECCV20 paper')
+                        help='Set this if using any of the original networks from ECCV20 paper')
+    parser.add_argument('--voxel_method', default='between_frames', type=str,
+                        help='which method should be used to form the voxels',
+                        choices=['between_frames', 'k_events', 't_seconds'])
+    parser.add_argument('--k', type=int,
+                        help='new voxels are formed every k events (required if voxel_method is k_events)')
+    parser.add_argument('--sliding_window_w', type=int,
+                        help='sliding_window size (required if voxel_method is k_events)')
+    parser.add_argument('--t', type=float,
+                        help='new voxels are formed every t seconds (required if voxel_method is t_seconds)')
+    parser.add_argument('--sliding_window_t', type=float,
+                        help='sliding_window size in seconds (required if voxel_method is t_seconds)')
 
     args = parser.parse_args()
     
@@ -130,27 +149,27 @@ if __name__ == '__main__':
     checkpoint = torch.load(args.checkpoint_path)
     kwargs['checkpoint'] = checkpoint
 
-    #import h5py
-    #dataset_kwargs = {'transforms': {},
+    # import h5py
+    # dataset_kwargs = {'transforms': {},
     #                  'max_length': None,
     #                  'sensor_size': None,
     #                  'num_bins': 5,
     #                  'legacy': True,
     #                  'voxel_method': {'method':'between_frames'}
     #                  }
-    #h5_path = "/home/timo/Data2/preprocessed_datasets/h5_voxels/slider_depth_cut.h5"
-    #data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs)
-    #h5_file = h5py.File(h5_path, 'r')
-    #for i, item in enumerate(data_loader):
+    # h5_path = "/home/timo/Data2/preprocessed_datasets/h5_voxels/slider_depth_cut.h5"
+    # data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs)
+    # h5_file = h5py.File(h5_path, 'r')
+    # for i, item in enumerate(data_loader):
     #    data_name = "frame_{:09d}".format(i)
     #    dset = h5_file[data_name]
     #    voxel = np.stack([bin[:] for bin in dset['voxels'].values()], axis=0)  # C x H x W
     #    new_voxel = item['events']
-
+    #
     #    if True:
     #        print(np.sum(voxel))
     #        print(torch.sum(new_voxel))
     #        #print(voxel)
     #        #print(new_voxel)
-    model = load_model(args, **kwargs)
+    model = load_model(**kwargs)
     main(args, model)
