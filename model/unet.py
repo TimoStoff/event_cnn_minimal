@@ -62,6 +62,7 @@ class BaseUNet(nn.Module):
         return ConvLayer(self.base_num_channels if self.skip_type == 'sum' else 2 * self.base_num_channels,
                          num_output_channels, 1, activation=None, norm=norm)
 
+
 class WNet(BaseUNet):
     """
     Recurrent UNet architecture where every encoder is followed by a recurrent convolutional block,
@@ -94,7 +95,6 @@ class WNet(BaseUNet):
     def forward(self, x):
         """
         :param x: N x num_input_channels x H x W
-        :param prev_states: previous LSTM states for every encoder layer
         :return: N x num_output_channels x H x W
         """
 
@@ -159,7 +159,6 @@ class UNetFlow(BaseUNet):
     def forward(self, x):
         """
         :param x: N x num_input_channels x H x W
-        :param prev_states: previous LSTM states for every encoder layer
         :return: N x num_output_channels x H x W
         """
 
@@ -277,7 +276,6 @@ class UNetRecurrent(BaseUNet):
     def forward(self, x):
         """
         :param x: N x num_input_channels x H x W
-        :param prev_states: previous LSTM states for every encoder layer
         :return: N x num_output_channels x H x W
         """
 
@@ -326,11 +324,9 @@ class UNet(BaseUNet):
         self.decoders = self.build_decoders()
         self.pred = ConvLayer(self.base_num_channels, self.num_output_channels, kernel_size=1, activation=None)
 
-
     def forward(self, x):
         """
         :param x: N x num_input_channels x H x W
-        :param prev_states: previous LSTM states for every encoder layer
         :return: N x num_output_channels x H x W
         """
 
