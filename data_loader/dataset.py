@@ -192,6 +192,10 @@ class DynamicH5Dataset(Dataset):
             events_end_idx = np.searchsorted(self.np_ts,
                                              self.voxel_method['t'] + i * self.voxel_method['sliding_window_t'] + self.t0)
 
+            if events_end_idx == events_start_idx:
+                events_end_idx = events_start_idx + 1
+                print('WARNING! Set events_end_idx to events_start_idx + 1 at i={}'.format(i))
+
             timestamp = self.h5_file['events/ts'][events_start_idx]
         else:
             raise Exception("Unsupported voxel_method")
