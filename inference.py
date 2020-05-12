@@ -10,6 +10,7 @@ from tqdm import tqdm
 from utils.util import ensure_dir, flow2bgr_np
 from model import model as model_arch
 from data_loader.data_loaders import InferenceDataLoader
+from model.model import ColorNet
 from utils.util import CropParameters
 from utils.timers import CudaTimer
 
@@ -36,6 +37,8 @@ def load_model(checkpoint):
 
     model = model.to(device)
     model.eval()
+    if args.color:
+        model = ColorNet(model)
     print(model)
     for param in model.parameters():
         param.requires_grad = False
@@ -54,6 +57,7 @@ def main(args, model):
                                        'sliding_window_t': args.sliding_window_t}
                       }
     if not args.legacy:
+        print("Updated style model")
         dataset_kwargs['transforms'] = {'RobustNorm': {}}
         dataset_kwargs['combined_voxel_channels'] = False
 
@@ -79,7 +83,8 @@ def main(args, model):
         model.reset_states()
         for i, item in enumerate(tqdm(data_loader)):
             voxel = item['events'].to(device)
-            voxel = crop.pad(voxel)
+            if not args.color:
+                voxel = crop.pad(voxel)
             with CudaTimer('Inference'):
                 output = model(voxel)
             # save sample images, or do something with output here
@@ -97,11 +102,14 @@ def main(args, model):
                 fname = 'flow_{:010d}.png'.format(i)
                 cv2.imwrite(os.path.join(args.output_folder, fname), flow_img)
             else:
-                image = crop.crop(output['image'])
-                image = torch.squeeze(image)  # H x W
-                image = image.cpu().numpy()  # normalize here
-                image = np.clip(image, 0, 1)  # normalize here
-                image = (image * 255).astype(np.uint8)
+                if args.color:
+                    image = output['image']
+                else:
+                    image = crop.crop(output['image'])
+                    image = torch.squeeze(image)  # H x W
+                    image = image.cpu().numpy()  # normalize here
+                    image = np.clip(image, 0, 1)  # normalize here
+                    image = (image * 255).astype(np.uint8)
                 fname = 'frame_{:010d}.png'.format(i)
                 cv2.imwrite(join(args.output_folder, fname), image)
             ts_file.write('{:.15f}\n'.format(item['timestamp'].item()))
@@ -128,6 +136,8 @@ if __name__ == '__main__':
                         help='If true, save output to flow npy file')
     parser.add_argument('--legacy', action='store_true',
                         help='Set this if using any of the original networks from ECCV20 paper')
+    parser.add_argument('--color', action='store_true', default=False,
+                      help='Perform color reconstruction')
     parser.add_argument('--voxel_method', default='between_frames', type=str,
                         help='which method should be used to form the voxels',
                         choices=['between_frames', 'k_events', 't_seconds'])
@@ -149,27 +159,5 @@ if __name__ == '__main__':
     checkpoint = torch.load(args.checkpoint_path)
     kwargs['checkpoint'] = checkpoint
 
-    # import h5py
-    # dataset_kwargs = {'transforms': {},
-    #                  'max_length': None,
-    #                  'sensor_size': None,
-    #                  'num_bins': 5,
-    #                  'legacy': True,
-    #                  'voxel_method': {'method':'between_frames'}
-    #                  }
-    # h5_path = "/home/timo/Data2/preprocessed_datasets/h5_voxels/slider_depth_cut.h5"
-    # data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs)
-    # h5_file = h5py.File(h5_path, 'r')
-    # for i, item in enumerate(data_loader):
-    #    data_name = "frame_{:09d}".format(i)
-    #    dset = h5_file[data_name]
-    #    voxel = np.stack([bin[:] for bin in dset['voxels'].values()], axis=0)  # C x H x W
-    #    new_voxel = item['events']
-    #
-    #    if True:
-    #        print(np.sum(voxel))
-    #        print(torch.sum(new_voxel))
-    #        #print(voxel)
-    #        #print(new_voxel)
     model = load_model(**kwargs)
     main(args, model)
