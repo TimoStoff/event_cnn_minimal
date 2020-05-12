@@ -25,6 +25,7 @@ cd event_cnn_minimal/events_contrast_maximization/
 git checkout master
 cd ..
 ```
+## Conversion to HDF5
 This code processes the events in HDF5 format. To convert the rosbags to this format, open a new terminal and source a ROS workspace.
 ```
 source /opt/ros/kinetic/setup.bash
@@ -36,6 +37,11 @@ wget http://rpg.ifi.uzh.ch/datasets/davis/slider_depth.bag -O /tmp/slider_depth.
 source /opt/ros/kinetic/setup.bash
 python events_contrast_maximization/tools/rosbag_to_h5.py /tmp/slider_depth.bag --output_dir /tmp/h5_events --event_topic /dvs/events --image_topic /dvs/image_raw
 ```
+If you have access to [events from a color event camera](http://rpg.ifi.uzh.ch/CED.html), you need to set `image_topic` to the topic containing events and a flag `--is_color`. For example, using [`carpet_simple.bag`](http://rpg.ifi.uzh.ch/CED/datasets/CED_simple.zip):
+```
+python events_contrast_maximization/tools/rosbag_to_h5.py /tmp/simple_carpet.bag --image_topic /dvs/image_color --is_color
+```
+## Inference
 Download the pretrained models from [here](https://drive.google.com/open?id=1J6PbqYPOGlyspYsdH4fgg5pZpc_l-BOD), into event_cnn_minimal.
 
 To estimate reconstruction:
