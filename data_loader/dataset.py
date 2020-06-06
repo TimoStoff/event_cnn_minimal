@@ -186,11 +186,11 @@ class DynamicH5Dataset(Dataset):
 
             frame = self.transform_frame(frame, seed)
 
+            dt = events_end_idx - events_start_idx
             if dset.attrs['num_flow'] == dset.attrs['num_imgs']:
                 flow = self.h5_file['flow']['flow{:09d}'.format(i + 1)][:]
                 flow = self.transform_flow(flow, seed)
                 # convert to displacement (pix)
-                dt = events_end_idx - events_start_idx
                 flow *= dt
             else:
                 flow = torch.zeros((2, frame.shape[-2], frame.shape[-1]),
@@ -200,7 +200,8 @@ class DynamicH5Dataset(Dataset):
                     'flow': flow,
                     'events': voxel,
                     'timestamp': timestamp,
-                    'data_source_idx': self.data_source_idx}
+                    'data_source_idx': self.data_source_idx},
+                    'dt': dt
         else:
             item = {'events': voxel,
                     'timestamp': timestamp,
