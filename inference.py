@@ -48,7 +48,7 @@ def load_model(checkpoint):
 def main(args, model):
     dataset_kwargs = {'transforms': {},
                       'max_length': None,
-                      'sensor_size': None,
+                      'sensor_resolution': None,
                       'num_bins': 5,
                       'voxel_method': {'method': args.voxel_method,
                                        'k': args.k,
@@ -61,7 +61,7 @@ def main(args, model):
         dataset_kwargs['transforms'] = {'RobustNorm': {}}
         dataset_kwargs['combined_voxel_channels'] = False
 
-    data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs)
+    data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs, ltype=args.loader_type)
 
     height, width = None, None
     for d in data_loader:
@@ -150,6 +150,8 @@ if __name__ == '__main__':
                         help='new voxels are formed every t seconds (required if voxel_method is t_seconds)')
     parser.add_argument('--sliding_window_t', type=float,
                         help='sliding_window size in seconds (required if voxel_method is t_seconds)')
+    parser.add_argument('--loader_type', default='MMP', type=str,
+                        help='Which data format to load (HDF5 recommended)')
 
     args = parser.parse_args()
     

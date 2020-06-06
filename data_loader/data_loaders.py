@@ -2,7 +2,6 @@ from torch.utils.data import DataLoader
 # local modules
 from .dataset import DynamicH5Dataset
 
-
 class InferenceDataLoader(DataLoader):
     """
     """
@@ -12,7 +11,7 @@ class InferenceDataLoader(DataLoader):
         if ltype == "H5":
             dataset = DynamicH5Dataset(data_path, **dataset_kwargs)
         elif ltype == "MMP":
-            pass
+            dataset = DynamicH5Dataset(data_path, **dataset_kwargs)
         else:
             raise Exception("Unknown loader type {}".format(ltype))
         super().__init__(dataset, batch_size=1, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
