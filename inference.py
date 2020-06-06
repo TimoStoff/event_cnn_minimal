@@ -90,7 +90,8 @@ def main(args, model):
             # save sample images, or do something with output here
             if args.is_flow:
                 flow_t = torch.squeeze(crop.crop(output['flow']))
-                flow = flow_t.cpu().numpy()
+                # Convert displacement to flow
+                flow = flow_t.cpu().numpy()/item['dt'].numpy()
                 ts = item['timestamp'].cpu().numpy()
                 flow_dict = {'flow': flow, 'ts': ts}
                 fname = 'flow_{:010d}.npy'.format(i)

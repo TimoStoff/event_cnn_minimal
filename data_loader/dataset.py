@@ -180,13 +180,12 @@ class DynamicH5Dataset(Dataset):
             seed = random.randint(0, 2 ** 32)
 
         voxel = self.transform_voxel(voxel, seed)
+        dt = self.h5_file['events/ts'][events_end_idx] - self.h5_file['events/ts'][events_start_idx]
 
         if self.voxel_method['method'] == 'between_frames':
             frame = img_dset[:]  # H x W
-
             frame = self.transform_frame(frame, seed)
 
-            dt = events_end_idx - events_start_idx
             if dset.attrs['num_flow'] == dset.attrs['num_imgs']:
                 flow = self.h5_file['flow']['flow{:09d}'.format(i + 1)][:]
                 flow = self.transform_flow(flow, seed)
@@ -200,11 +199,12 @@ class DynamicH5Dataset(Dataset):
                     'flow': flow,
                     'events': voxel,
                     'timestamp': timestamp,
-                    'data_source_idx': self.data_source_idx},
-                    'dt': dt
+                    'data_source_idx': self.data_source_idx,
+                    'dt': torch.tensor(dt)}
         else:
             item = {'events': voxel,
                     'timestamp': timestamp,
-                    'data_source_idx': self.data_source_idx}
+                    'data_source_idx': self.data_source_idx,
+                    'dt': torch.tensor(dt)}
 
         return item
