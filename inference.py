@@ -56,7 +56,7 @@ def main(args, model):
                                        'sliding_window_w': args.sliding_window_w,
                                        'sliding_window_t': args.sliding_window_t}
                       }
-    if not args.legacy:
+    if args.update:
         print("Updated style model")
         dataset_kwargs['transforms'] = {'RobustNorm': {}}
         dataset_kwargs['combined_voxel_channels'] = False
@@ -134,8 +134,8 @@ if __name__ == '__main__':
                         help='indices of GPUs to enable')
     parser.add_argument('--is_flow', action='store_true',
                         help='If true, save output to flow npy file')
-    parser.add_argument('--legacy', action='store_true',
-                        help='Set this if using any of the original networks from ECCV20 paper')
+    parser.add_argument('--update', action='store_true',
+                        help='Set this if using updated models')
     parser.add_argument('--color', action='store_true', default=False,
                       help='Perform color reconstruction')
     parser.add_argument('--voxel_method', default='between_frames', type=str,
