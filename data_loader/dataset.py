@@ -247,7 +247,7 @@ class DynamicH5Dataset(BaseVoxelDataset):
         """
         Load data from files. Must set the members:
             self.sensor_resolution, self.num_pixels, self.length, self.has_flow,
-            self.t0, self.tk, self.duration, self.num_events, self.event_frame_indices
+            self.t0, self.tk, self.duration, self.num_events, frame_ts
         """
         try:
             self.h5_file = h5py.File(data_path, 'r')
@@ -491,249 +491,335 @@ class MemMapDataset(Dataset):
             method={'method':'k_events', 'k':10000, 'sliding_window_w':10000}
     """
 
-    def __init__(self,
-                 data_path,
-                 transforms={},
-                 num_bins=5,
-                 max_length=None,
-                 voxel_method=None,
-                 config=None):
+    def get_frame(self, index):
+        frame = self.filehandle['images'][index + 1][:, :, 0]
 
-        if isinstance(config, dict):
-            self.config = config
-            data_source = 'unknown'
-        else:
-            if config is None:
-                config = os.path.join(data_path, "dataset_config.json")
-            assert (os.path.exists(config))
-            self.config = read_json(config)
-            data_source = self.config['data_source']
-        assert "sensor_resolution" in self.config
+    def get_flow(self, index):
+        flow = self.filehandle['optic_flow'][index + 1]
 
-        try:
-            self.data_source_idx = data_sources.index(data_source)
-        except ValueError:
-            self.data_source_idx = -1
+    def get_events(self, index):
+        events_xy = filehandle["xy"][idx0:idx1]
+        ts = filehandle["t"][idx0:idx1] - filehandle["t"][idx0]
+        ps = filehandle["p"][idx0:idx1]
+        return xy[:, 0], xy[:, 1], ts, ps
 
-        self.sensor_resolution = self.config["sensor_resolution"]
-        self.num_pixels = self.sensor_resolution[0] * self.sensor_resolution[1]
-        self.num_bins = num_bins
-        self.data_path = data_path
-
-        self.filehandle = self.load_files(data_path)
-
-        if voxel_method is None:
-            voxel_method = {'method': 'between_frames'}
-        self.set_voxel_method(voxel_method)
-
-        self.normalize_voxels = False
-        if 'RobustNorm' in transforms.keys():
-            vox_transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]
-            del (transforms['RobustNorm'])
-            self.normalize_voxels = True
-            self.vox_transform = Compose(vox_transforms_list)
-
-        transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]
-
-        if len(transforms_list) == 0:
-            self.transform = None
-        elif len(transforms_list) == 1:
-            self.transform = transforms_list[0]
-        else:
-            self.transform = Compose(transforms_list)
-        if not self.normalize_voxels:
-            self.vox_transform = self.transform
-
-        self.length = self.__len__()
-        if max_length is not None:
-            self.length = min(self.length, max_length + 1)
-
-    def set_voxel_method(self, voxel_method):
-        self.voxel_method = voxel_method
-        if self.voxel_method['method'] == 'k_events':
-            self.length = max(int(self.num_events/(voxel_method['k']-voxel_method['sliding_window_w'])), 0)
-        elif self.voxel_method['method'] == 't_seconds':
-            self.length = max(int(self.duration/(voxel_method['t']-voxel_method['sliding_window_t'])), 0)
-        elif self.voxel_method['method'] == 'between_frames':
-            self.length = self.filehandle['num_imgs'] - 1
-        else:
-            raise Exception("Invalid voxel forming method chosen ({})".format(self.voxel_method))
-        if self.length == 0:
-            raise Exception("Current voxel generation parameters lead to sequence length of zero")
-
-    def compute_sequence_stats(self):
-        # if index is not in dict compute them from frame_stamps
-        if "length" not in data:
-            if self.voxel_method is 'between_frames':
-                data["length"] = len(data["index"])
-            elif self.voxel_method is 'k_events':
-                data["length"] = int((len(data['p']) - 2 * self.events_per_voxel_grid) // (
-                            self.events_per_voxel_grid * (1.0 - self.overlap_perc)))
-            elif self.voxel_method is 't_seconds':
-                t0, tk = data['t'][0][0], data['t'][-1][0]
-                seq_dur = tk - t0
-                data["length"] = int((seq_dur + self.period - self.duration) / self.period)
-                starting_indices = []
-                end_indices = []
-                for i in range(data["length"]):
-                    t_start = t0 + self.period * i
-                    starting_indices.append(np.searchsorted(np.squeeze(data['t']), t_start))
-                    end_indices.append(np.searchsorted(np.squeeze(data['t']), t_start + self.duration) - 1)
-                data["start_indices"] = starting_indices
-                data["end_indices"] = end_indices
-            # print("{}: Enough for {} unique voxel grids".format(subroot, data["length"]))
-
-    def load_files(self, rootdir):
-        assert os.path.isdir(rootdir), '%s is not a valid rootdirectory' % rootdir
+    def load_data(self, data_path, timestamp_fname = "timestamps.npy", image_fname = "images.npy",
+            optic_flow_fname = "optic_flow.npy", optic_flow_stamps_fname = "optic_flow_stamps",
+            t_fname = "t.npy", xy_fname = "xy_fname", p_fname = "p_fname"):
+        """
+        Load data from files.
+        """
+        assert os.path.isdir(data_path), '%s is not a valid data_pathectory' % data_path
 
         data = {}
         self.has_flow = False
-        for subroot, _, fnames in sorted(os.walk(rootdir)):
+        for subroot, _, fnames in sorted(os.walk(data_path)):
             for fname in sorted(fnames):
                 path = os.path.join(subroot, fname)
 
-                if fname.endswith(".npy"):
-                    if fname.endswith("index.npy"):  # index mapping image index to event idx
-                        indices = np.load(path)  # N x 2
-                        assert len(indices.shape) == 2 and indices.shape[1] == 2
-                        indices = indices.astype("int64")  # ignore event indices which are 0 (before first image)
-                        data["index"] = indices.T
-                    elif fname.endswith("timestamps.npy"):
-                        frame_stamps = np.load(path)
-                        data["frame_stamps"] = frame_stamps
-                    elif fname.endswith("images.npy"):
-                        data["images"] = np.load(path, mmap_mode="r")
-                    elif fname.endswith("optic_flow.npy"):
-                        data["optic_flow"] = np.load(path, mmap_mode="r")
-                        self.has_flow = True
-                    elif fname.endswith("optic_flow_timestamps.npy"):
-                        optic_flow_stamps = np.load(path)
-                        data["optic_flow_stamps"] = optic_flow_stamps
+                if fname.endswith(timestamp_fname):
+                    frame_stamps = np.load(path)
+                    data["frame_stamps"] = frame_stamps
+                elif fname.endswith(image_fname):
+                    data["images"] = np.load(path, mmap_mode="r")
+                elif fname.endswith(optic_flow_fname):
+                    data["optic_flow"] = np.load(path, mmap_mode="r")
+                    self.has_flow = True
+                elif fname.endswith(optic_flow_stamps_fname):
+                    optic_flow_stamps = np.load(path)
+                    data["optic_flow_stamps"] = optic_flow_stamps
 
-                    handle = np.load(path, mmap_mode="r")
-                    if fname.endswith("t.npy"):  # timestamps
-                        data["t"] = handle
-                    elif fname.endswith("xy.npy"):  # coordinates
-                        data["xy"] = handle
-                    elif fname.endswith("p.npy"):  # polarity
-                        data["p"] = handle
+                handle = np.load(path, mmap_mode="r")
+                if fname.endswith(t_fname):  # timestamps
+                    data["t"] = handle
+                elif fname.endswith(xy_fname):  # coordinates
+                    data["xy"] = handle
+                elif fname.endswith(p_fname):  # polarity
+                    data["p"] = handle
             if len(data) > 0:
                 data['path'] = subroot
                 if "t" not in data:
-                    print(f"Ignoring rootdirectory {subroot} since no events")
+                    print(f"Ignoring data_pathectory {subroot} since no events")
                     continue
                 assert (len(data['p']) == len(data['xy']) and len(data['p']) == len(data['t']))
-                self.num_events = len(data['p'])
 
                 if "index" not in data and "frame_stamps" in data:
                     data["index"] = find_event_indices_for_frame(data["t"], data['frame_stamps'])
 
                 self.t0, self.tk = data['t'][0][0], data['t'][-1][0]
                 self.duration = self.tk-self.t0
-        return data
+                self.num_events = len(data['p'])
 
-    def __getitem__(self, index, seed=None):
-        assert 0 <= index < self.__len__(), "index {} out of bounds (0 <= x < {})".format(index, self.__len__())
-        voxel = self.get_voxel_grid(self.filehandle, index)
-        frame = self.filehandle['images'][index + 1][:, :, 0]
+        self.frame_ts = []
+        for ts in data["frame_stamps"]:
+            self.frame_ts.append(ts)
+        self.find_config(data_path)
+        self.filehandle = data
 
-        if seed is None:
-            # if no specific random seed was passed, generate our own.
-            seed = random.randint(0, 2 ** 32)
-
-        voxel = self.transform_voxel(voxel, seed)
-        dt = self.filehandle['frame_stamps'][index + 1] - self.filehandle['frame_stamps'][index]
-
-        if self.voxel_method['method'] == 'between_frames':
-            frame = self.transform_frame(frame, seed)
-            if self.has_flow:
-                flow = self.filehandle['optic_flow'][index + 1]
-                # convert to displacement (pix)
-                flow = flow * dt
-                flow = self.transform_flow(flow, seed)
-            else:
-                flow = torch.zeros((2, frame.shape[-2], frame.shape[-1]), dtype=frame.dtype, device=frame.device)
-
-            item = {'frame': frame,
-                    'flow': flow,
-                    'events': voxel,
-                    'timestamp': self.filehandle["frame_stamps"][1 + index],
-                    'data_source_idx': self.data_source_idx,
-                    'dt': dt}
-        else:
-            item = {'events': voxel,
-                    'timestamp': self.filehandle["frame_stamps"][1 + index],
-                    'data_source_idx': self.data_source_idx,
-                    'dt': dt}
-        return item
-
-    def get_voxel_grid(self, filehandle, index, combined_voxel_channels=True):
-        if self.voxel_method is 'between_frames':
-            indices = filehandle["index"]
-            idx1, idx0 = indices[index]
-        elif self.voxel_method is 'k_events':
-            idx0 = int((1.0 - self.overlap_perc) * self.events_per_voxel_grid * index)
-            idx1 = int(idx0 + self.events_per_voxel_grid)
-        elif self.voxel_method is 't_seconds':
-            idx0 = filehandle["start_indices"][index]
-            idx1 = filehandle["end_indices"][index]
-        else:
-            raise Exception("voxel_method is not supported")
-
-        if not (idx0 >= 0 and idx1 <= filehandle["num_events"]):
-            print("WARNING: Either {}<0s or {}>{}".format(idx0, idx1, filehandle["num_events"]))
-        assert (idx0 >= 0 and idx1 <= filehandle["num_events"])
-        # select events with indices between current frame at index and next frame at index+1
-
-        events_xy = filehandle["xy"][idx0:idx1]
-        events_t = filehandle["t"][idx0:idx1] - filehandle["t"][idx0]
-        events_p = filehandle["p"][idx0:idx1]
-
-        # generate voxel grid which has size C x H x W
-        H, W = self.sensor_resolution
-        channels = self.num_bins
-
-        if len(events_xy) < 2:
-            return np.zeros((2 * channels, H, W))
-
-        if combined_voxel_channels:
-            voxel_grid = er.events_to_voxel_torch(events_xy[:, 0], events_xy[:, 1],
-                    events_t, events_p, channels, (H, W))
-        else:
-            voxel_grid = er.events_to_neg_pos_voxel(events_xy[:, 0], events_xy[:, 1],
-                    events_t, events_p, channels, (H, W))
-            voxel_grid = np.concatenate([voxel_grid[0], voxel_grid[1]], 0)
-
-        return voxel_grid
-
-    def transform_frame(self, frame, seed):
-        frame = torch.from_numpy(frame).float().unsqueeze(0) / 255
-        if self.transform:
-            random.seed(seed)
-            frame = self.transform(frame)
-        return frame
-
-    def transform_voxel(self, voxel, seed):
-        voxel = torch.from_numpy(voxel).type(torch.FloatTensor)  # [C x H x W]
-        if self.transform:
-            random.seed(seed)
-            voxel = self.vox_transform(voxel)
-        return voxel
-
-    def transform_flow(self, flow, seed):
-        flow = torch.from_numpy(flow)  # should end up [2 x H x W]
-        if self.transform:
-            random.seed(seed)
-            flow = self.transform(flow, is_flow=True)
-        return flow
-
-    @staticmethod
-    def find_event_indices_for_frame(event_stamps, frame_stamps):
-        # find the event index corresponding to the frame ts
-        indices_first = np.searchsorted(event_stamps[:, 0], frame_stamps[1:])
-        indices_last = np.searchsorted(event_stamps[:, 0], frame_stamps[:-1])
-        index = np.stack([indices_first, indices_last], -1)
+    def find_ts_index(self, timestamp):
+        """
+        Given a timestamp, find the event index
+        """
+        index = np.searchsorted(self.filehandle["t"], timestamp)
         return index
 
-    def __len__(self):
-        return self.length
+    def infer_resolution(self):
+        if len(self.filehandle["images"]) > ):
+            self.sensor_resolution = self.filehandle["images"][0].shape[-2:]
+        else:
+            self.sensor_resolution = [np.max(self.filehandle["xy"][:,1])+1, np.max(self.filehandle["xy"][:,0])+1]
+            print("Inferred sensor resolution: {}".format(self.sensor_resolution))
+
+    def find_config(self, data_path):
+        if self.sensor_resolution is None:
+            config = os.path.join(data_path, "dataset_config.json")
+            if os.path.exists(config):
+                self.config = read_json(config)
+                self.data_source = self.config['data_source']
+                self.sensor_resolution = self.config["sensor_resolution"]
+            else:
+                data_source = 'unknown'
+                self.sensor_resolution = self.infer_resolution()
+
+    #def __init__(self, data_path, transforms=None, sensor_resolution=None, num_bins=5,
+    #             voxel_method=None, max_length=None, combined_voxel_channels=True):
+
+
+    #    if isinstance(config, dict):
+    #        self.config = config
+    #        data_source = 'unknown'
+    #    else:
+    #        if config is None:
+    #            config = os.path.join(data_path, "dataset_config.json")
+    #        assert (os.path.exists(config))
+    #        self.config = read_json(config)
+    #        data_source = self.config['data_source']
+    #    assert "sensor_resolution" in self.config
+
+    #    try:
+    #        self.data_source_idx = data_sources.index(data_source)
+    #    except ValueError:
+    #        self.data_source_idx = -1
+
+    #    self.sensor_resolution = self.config["sensor_resolution"]
+    #    self.num_pixels = self.sensor_resolution[0] * self.sensor_resolution[1]
+    #    self.num_bins = num_bins
+    #    self.data_path = data_path
+
+    #    self.filehandle = self.load_files(data_path)
+
+    #    if voxel_method is None:
+    #        voxel_method = {'method': 'between_frames'}
+    #    self.set_voxel_method(voxel_method)
+
+    #    self.normalize_voxels = False
+    #    if 'RobustNorm' in transforms.keys():
+    #        vox_transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]
+    #        del (transforms['RobustNorm'])
+    #        self.normalize_voxels = True
+    #        self.vox_transform = Compose(vox_transforms_list)
+
+    #    transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]
+
+    #    if len(transforms_list) == 0:
+    #        self.transform = None
+    #    elif len(transforms_list) == 1:
+    #        self.transform = transforms_list[0]
+    #    else:
+    #        self.transform = Compose(transforms_list)
+    #    if not self.normalize_voxels:
+    #        self.vox_transform = self.transform
+
+    #    self.length = self.__len__()
+    #    if max_length is not None:
+    #        self.length = min(self.length, max_length + 1)
+
+    #def set_voxel_method(self, voxel_method):
+    #    self.voxel_method = voxel_method
+    #    if self.voxel_method['method'] == 'k_events':
+    #        self.length = max(int(self.num_events/(voxel_method['k']-voxel_method['sliding_window_w'])), 0)
+    #    elif self.voxel_method['method'] == 't_seconds':
+    #        self.length = max(int(self.duration/(voxel_method['t']-voxel_method['sliding_window_t'])), 0)
+    #    elif self.voxel_method['method'] == 'between_frames':
+    #        self.length = self.filehandle['num_imgs'] - 1
+    #    else:
+    #        raise Exception("Invalid voxel forming method chosen ({})".format(self.voxel_method))
+    #    if self.length == 0:
+    #        raise Exception("Current voxel generation parameters lead to sequence length of zero")
+
+    #def compute_sequence_stats(self):
+    #    # if index is not in dict compute them from frame_stamps
+    #    if "length" not in data:
+    #        if self.voxel_method is 'between_frames':
+    #            data["length"] = len(data["index"])
+    #        elif self.voxel_method is 'k_events':
+    #            data["length"] = int((len(data['p']) - 2 * self.events_per_voxel_grid) // (
+    #                        self.events_per_voxel_grid * (1.0 - self.overlap_perc)))
+    #        elif self.voxel_method is 't_seconds':
+    #            t0, tk = data['t'][0][0], data['t'][-1][0]
+    #            seq_dur = tk - t0
+    #            data["length"] = int((seq_dur + self.period - self.duration) / self.period)
+    #            starting_indices = []
+    #            end_indices = []
+    #            for i in range(data["length"]):
+    #                t_start = t0 + self.period * i
+    #                starting_indices.append(np.searchsorted(np.squeeze(data['t']), t_start))
+    #                end_indices.append(np.searchsorted(np.squeeze(data['t']), t_start + self.duration) - 1)
+    #            data["start_indices"] = starting_indices
+    #            data["end_indices"] = end_indices
+    #        # print("{}: Enough for {} unique voxel grids".format(subroot, data["length"]))
+
+    #def load_files(self, rootdir):
+    #    assert os.path.isdir(rootdir), '%s is not a valid rootdirectory' % rootdir
+
+    #    data = {}
+    #    self.has_flow = False
+    #    for subroot, _, fnames in sorted(os.walk(rootdir)):
+    #        for fname in sorted(fnames):
+    #            path = os.path.join(subroot, fname)
+
+    #            if fname.endswith(".npy"):
+    #                if fname.endswith("index.npy"):  # index mapping image index to event idx
+    #                    indices = np.load(path)  # N x 2
+    #                    assert len(indices.shape) == 2 and indices.shape[1] == 2
+    #                    indices = indices.astype("int64")  # ignore event indices which are 0 (before first image)
+    #                    data["index"] = indices.T
+    #                elif fname.endswith("timestamps.npy"):
+    #                    frame_stamps = np.load(path)
+    #                    data["frame_stamps"] = frame_stamps
+    #                elif fname.endswith("images.npy"):
+    #                    data["images"] = np.load(path, mmap_mode="r")
+    #                elif fname.endswith("optic_flow.npy"):
+    #                    data["optic_flow"] = np.load(path, mmap_mode="r")
+    #                    self.has_flow = True
+    #                elif fname.endswith("optic_flow_timestamps.npy"):
+    #                    optic_flow_stamps = np.load(path)
+    #                    data["optic_flow_stamps"] = optic_flow_stamps
+
+    #                handle = np.load(path, mmap_mode="r")
+    #                if fname.endswith("t.npy"):  # timestamps
+    #                    data["t"] = handle
+    #                elif fname.endswith("xy.npy"):  # coordinates
+    #                    data["xy"] = handle
+    #                elif fname.endswith("p.npy"):  # polarity
+    #                    data["p"] = handle
+    #        if len(data) > 0:
+    #            data['path'] = subroot
+    #            if "t" not in data:
+    #                print(f"Ignoring rootdirectory {subroot} since no events")
+    #                continue
+    #            assert (len(data['p']) == len(data['xy']) and len(data['p']) == len(data['t']))
+    #            self.num_events = len(data['p'])
+
+    #            if "index" not in data and "frame_stamps" in data:
+    #                data["index"] = find_event_indices_for_frame(data["t"], data['frame_stamps'])
+
+    #            self.t0, self.tk = data['t'][0][0], data['t'][-1][0]
+    #            self.duration = self.tk-self.t0
+    #    return data
+
+    #def __getitem__(self, index, seed=None):
+    #    assert 0 <= index < self.__len__(), "index {} out of bounds (0 <= x < {})".format(index, self.__len__())
+    #    voxel = self.get_voxel_grid(self.filehandle, index)
+    #    frame = self.filehandle['images'][index + 1][:, :, 0]
+
+    #    if seed is None:
+    #        # if no specific random seed was passed, generate our own.
+    #        seed = random.randint(0, 2 ** 32)
+
+    #    voxel = self.transform_voxel(voxel, seed)
+    #    dt = self.filehandle['frame_stamps'][index + 1] - self.filehandle['frame_stamps'][index]
+
+    #    if self.voxel_method['method'] == 'between_frames':
+    #        frame = self.transform_frame(frame, seed)
+    #        if self.has_flow:
+    #            flow = self.filehandle['optic_flow'][index + 1]
+    #            # convert to displacement (pix)
+    #            flow = flow * dt
+    #            flow = self.transform_flow(flow, seed)
+    #        else:
+    #            flow = torch.zeros((2, frame.shape[-2], frame.shape[-1]), dtype=frame.dtype, device=frame.device)
+
+    #        item = {'frame': frame,
+    #                'flow': flow,
+    #                'events': voxel,
+    #                'timestamp': self.filehandle["frame_stamps"][1 + index],
+    #                'data_source_idx': self.data_source_idx,
+    #                'dt': dt}
+    #    else:
+    #        item = {'events': voxel,
+    #                'timestamp': self.filehandle["frame_stamps"][1 + index],
+    #                'data_source_idx': self.data_source_idx,
+    #                'dt': dt}
+    #    return item
+
+    #def get_voxel_grid(self, filehandle, index, combined_voxel_channels=True):
+    #    if self.voxel_method is 'between_frames':
+    #        indices = filehandle["index"]
+    #        idx1, idx0 = indices[index]
+    #    elif self.voxel_method is 'k_events':
+    #        idx0 = int((1.0 - self.overlap_perc) * self.events_per_voxel_grid * index)
+    #        idx1 = int(idx0 + self.events_per_voxel_grid)
+    #    elif self.voxel_method is 't_seconds':
+    #        idx0 = filehandle["start_indices"][index]
+    #        idx1 = filehandle["end_indices"][index]
+    #    else:
+    #        raise Exception("voxel_method is not supported")
+
+    #    if not (idx0 >= 0 and idx1 <= filehandle["num_events"]):
+    #        print("WARNING: Either {}<0s or {}>{}".format(idx0, idx1, filehandle["num_events"]))
+    #    assert (idx0 >= 0 and idx1 <= filehandle["num_events"])
+    #    # select events with indices between current frame at index and next frame at index+1
+
+    #    events_xy = filehandle["xy"][idx0:idx1]
+    #    events_t = filehandle["t"][idx0:idx1] - filehandle["t"][idx0]
+    #    events_p = filehandle["p"][idx0:idx1]
+
+    #    # generate voxel grid which has size C x H x W
+    #    H, W = self.sensor_resolution
+    #    channels = self.num_bins
+
+    #    if len(events_xy) < 2:
+    #        return np.zeros((2 * channels, H, W))
+
+    #    if combined_voxel_channels:
+    #        voxel_grid = er.events_to_voxel_torch(events_xy[:, 0], events_xy[:, 1],
+    #                events_t, events_p, channels, (H, W))
+    #    else:
+    #        voxel_grid = er.events_to_neg_pos_voxel(events_xy[:, 0], events_xy[:, 1],
+    #                events_t, events_p, channels, (H, W))
+    #        voxel_grid = np.concatenate([voxel_grid[0], voxel_grid[1]], 0)
+
+    #    return voxel_grid
+
+    #def transform_frame(self, frame, seed):
+    #    frame = torch.from_numpy(frame).float().unsqueeze(0) / 255
+    #    if self.transform:
+    #        random.seed(seed)
+    #        frame = self.transform(frame)
+    #    return frame
+
+    #def transform_voxel(self, voxel, seed):
+    #    voxel = torch.from_numpy(voxel).type(torch.FloatTensor)  # [C x H x W]
+    #    if self.transform:
+    #        random.seed(seed)
+    #        voxel = self.vox_transform(voxel)
+    #    return voxel
+
+    #def transform_flow(self, flow, seed):
+    #    flow = torch.from_numpy(flow)  # should end up [2 x H x W]
+    #    if self.transform:
+    #        random.seed(seed)
+    #        flow = self.transform(flow, is_flow=True)
+    #    return flow
+
+    #@staticmethod
+    #def find_event_indices_for_frame(event_stamps, frame_stamps):
+    #    # find the event index corresponding to the frame ts
+    #    indices_first = np.searchsorted(event_stamps[:, 0], frame_stamps[1:])
+    #    indices_last = np.searchsorted(event_stamps[:, 0], frame_stamps[:-1])
+    #    index = np.stack([indices_first, indices_last], -1)
+    #    return index
+
+    #def __len__(self):
+    #    return self.length
