@@ -253,11 +253,8 @@ class BaseVoxelDataset(Dataset):
             self.length = max(int(self.num_events / (voxel_method['k'] - voxel_method['sliding_window_w'])), 0)
             self.event_indices = self.compute_k_indices()
         elif self.voxel_method['method'] == 't_seconds':
-            print("num={}, t={}, s={}".format(self.num_events, voxel_method['t'] , voxel_method['sliding_window_t']))
             self.length = max(int(self.duration / (voxel_method['t'] - voxel_method['sliding_window_t'])), 0)
             self.event_indices = self.compute_timeblock_indices()
-            print(self.event_indices)
-            print("Dataset has length {}".format(self.length))
         elif self.voxel_method['method'] == 'between_frames':
             self.length = self.num_frames - 1
             self.event_indices = self.compute_frame_indices()
