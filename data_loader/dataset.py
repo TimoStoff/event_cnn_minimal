@@ -222,6 +222,10 @@ class BaseVoxelDataset(Dataset):
         return timeblock_indices
 
     def compute_k_indices(self):
+        """
+        For each block of k events, find the start and
+        end indices of the corresponding events
+        """
         k_indices = []
         start_idx = 0
         for i in range(self.__len__()):
@@ -231,6 +235,10 @@ class BaseVoxelDataset(Dataset):
         return k_indices
 
     def set_voxel_method(self, voxel_method):
+        """
+        Given the desired method of computing voxels,
+        compute the event_indices lookup table and dataset length
+        """
         self.voxel_method = voxel_method
         if self.voxel_method['method'] == 'k_events':
             self.length = max(int(self.num_events/(voxel_method['k']-voxel_method['sliding_window_w'])), 0)
@@ -250,22 +258,41 @@ class BaseVoxelDataset(Dataset):
         return self.length
 
     def get_event_indices(self, index):
+        """
+        Get start and end indices of events at index
+        """
         idx0, idx1 = self.event_indices[index]
         if not (idx0 >= 0 and idx1 <= self.num_events):
             raise Exception("WARNING: Event indices {},{} out of bounds 0,{}".format(idx0, idx1, self.num_events))
         return idx0, idx1
 
     def get_voxel_grid(self, xs, ys, ts, ps, combined_voxel_channels=True):
-        # generate voxel grid which has size C x H x W
+        """
+        Given events, return voxel grid
+        :param xs: tensor containg x coords of events
+        :param ys: tensor containg y coords of events
+        :param ts: tensor containg t coords of events
+        :param ps: tensor containg p coords of events
+        :param combined_voxel_channels: if True, create voxel grid merging positive and
+            negative events (resulting in NUM_BINS x H x W tensor). Otherwise, create
+            voxel grid for positive and negative events separately
+            (resulting in 2*NUM_BINS x H x W tensor)
+        """
         if combined_voxel_channels:
+            # generate voxel grid which has size self.num_bins x H x W
             voxel_grid = events_to_voxel_torch(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_resolution)
         else:
+            # generate voxel grid which has size 2*self.num_bins x H x W
+            voxel_grid = events_to_voxel_torch(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_resolution)
             voxel_grid = events_to_neg_pos_voxel_torch(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_resolution)
             voxel_grid = torch.cat([voxel_grid[0], voxel_grid[1]], 0)
 
         return voxel_grid
 
     def transform_frame(self, frame, seed):
+        """
+        Augment frame and turn into tensor
+        """
         frame = torch.from_numpy(frame).float().unsqueeze(0) / 255
         if self.transform:
             random.seed(seed)
@@ -273,12 +300,18 @@ class BaseVoxelDataset(Dataset):
         return frame
 
     def transform_voxel(self, voxel, seed):
+        """
+        Augment voxel and turn into tensor
+        """
         if self.vox_transform:
             random.seed(seed)
             voxel = self.vox_transform(voxel)
         return voxel
 
     def transform_flow(self, flow, seed):
+        """
+        Augment flow and turn into tensor
+        """
         flow = torch.from_numpy(flow)  # should end up [2 x H x W]
         if self.transform:
             random.seed(seed)
@@ -287,33 +320,10 @@ class BaseVoxelDataset(Dataset):
 
 class DynamicH5Dataset(BaseVoxelDataset):
     """
-    Loads time-synchronized, event voxel grids, optic flow and
-    standard frames from a hdf5 file containing events, optic flow and
-    frames. Voxel grids are formed on-the-fly.
-
-    This Dataset class iterates through all the event tensors and returns,
-    for each tensor, a dictionary where:
-
-    * frame is a H x W tensor containing the first frame whose
-      timestamp >= event tensor
-    * events is a C x H x W tensor containing the event data
-    * flow is a 2 x H x W tensor containing the flow (displacement) from
-      the current frame to the last frame
-
-    Parameters:
-        data_path Path to the h5 file containing the event/image data
-        transforms Dict containing the desired augmentations on the voxel grid
-        sensor_resolution The size of the image sensor from which the events originate
-        num_bins The number of bins desired in the voxel grid
-        voxel_method Which method should be used to form the voxels.
-            Currently supports:
-            * "k_events" (new voxels are formed every k events)
-            * "t_seconds" (new voxels are formed every t seconds)
-            * "between_frames" (all events between frames are taken, requires frames to exist)
-            A sliding window width must be given for k_events and t_seconds,
-            which determines overlap (no overlap if set to -1). Eg:
-            method={'method':'k_events', 'k':10000, 'sliding_window_w':10000}
+    Dataloader for events saved in the Monash University HDF5 events format
+    (see https://github.com/TimoStoff/event_utils for code to convert datasets)
     """
+
     def get_frame(self, index):
         return self.h5_file['images']['image{:09d}'.format(index)][:]
 
@@ -328,11 +338,6 @@ class DynamicH5Dataset(BaseVoxelDataset):
         return xs, ys, ts, ps
 
     def load_data(self, data_path):
-        """
-        Load data from files. Must set the members:
-            self.sensor_resolution, self.num_pixels, self.length, self.has_flow,
-            self.t0, self.tk, self.duration, self.num_events, frame_ts
-        """
         try:
             self.h5_file = h5py.File(data_path, 'r')
         except OSError as err:
@@ -360,9 +365,6 @@ class DynamicH5Dataset(BaseVoxelDataset):
             self.data_source_idx = -1
 
     def find_ts_index(self, timestamp):
-        """
-        Given a timestamp, find the event index
-        """
         idx = binary_search_h5_dset(self.h5_file['events/ts'], timestamp)
         return idx
 
@@ -377,32 +379,8 @@ class DynamicH5Dataset(BaseVoxelDataset):
 
 class MemMapDataset(BaseVoxelDataset):
     """
-    Loads time-synchronized, event voxel grids, optic flow and
-    standard frames from numpy memmaps containing events, optic flow and
-    frames. Voxel grids are formed on-the-fly.
-
-    This Dataset class iterates through all the event tensors and returns,
-    for each tensor, a dictionary where:
-
-    * frame is a H x W tensor containing the first frame whose
-      timestamp >= event tensor
-    * events is a C x H x W tensor containing the event data
-    * flow is a 2 x H x W tensor containing the flow (displacement) from
-      the current frame to the last frame
-
-    Parameters:
-        data_path Path to the h5 file containing the event/image data
-        transforms Dict containing the desired augmentations on the voxel grid
-        sensor_resolution The size of the image sensor from which the events originate
-        num_bins The number of bins desired in the voxel grid
-        voxel_method Which method should be used to form the voxels.
-            Currently supports:
-            * "k_events" (new voxels are formed every k events)
-            * "t_seconds" (new voxels are formed every t seconds)
-            * "between_frames" (all events between frames are taken, requires frames to exist)
-            A sliding window width must be given for k_events and t_seconds,
-            which determines overlap (no overlap if set to -1). Eg:
-            method={'method':'k_events', 'k':10000, 'sliding_window_w':10000}
+    Dataloader for events saved in the MemMap events format used at RPG.
+    (see https://github.com/TimoStoff/event_utils for code to convert datasets)
     """
 
     def get_frame(self, index):
@@ -424,9 +402,7 @@ class MemMapDataset(BaseVoxelDataset):
     def load_data(self, data_path, timestamp_fname = "timestamps.npy", image_fname = "images.npy",
             optic_flow_fname = "optic_flow.npy", optic_flow_stamps_fname = "optic_flow_stamps.npy",
             t_fname = "t.npy", xy_fname = "xy.npy", p_fname = "p.npy"):
-        """
-        Load data from files.
-        """
+
         assert os.path.isdir(data_path), '%s is not a valid data_pathectory' % data_path
 
         data = {}
@@ -478,9 +454,6 @@ class MemMapDataset(BaseVoxelDataset):
         self.filehandle = data
 
     def find_ts_index(self, timestamp):
-        """
-        Given a timestamp, find the event index
-        """
         index = np.searchsorted(self.filehandle["t"], timestamp)
         return index
 
