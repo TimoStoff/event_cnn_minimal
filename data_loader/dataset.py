@@ -12,6 +12,7 @@ from events_contrast_maximization.utils.event_utils import events_to_voxel_torch
     binary_search_h5_dset
 from utils.util import read_json, write_json
 
+
 class BaseVoxelDataset(Dataset):
     """
     Dataloader for voxel grids given file containing events.
@@ -60,7 +61,7 @@ class BaseVoxelDataset(Dataset):
             method={'method':'between_frames'}
             Default is 'between_frames'.
     """
-    
+
     def get_frame(self, index):
         """
         Get frame at index
@@ -111,7 +112,7 @@ class BaseVoxelDataset(Dataset):
         self.has_flow = False
 
         self.sensor_resolution, self.t0, self.tk, self.num_events, self.frame_ts, self.num_frames = \
-                None, None, None, None, None, None
+            None, None, None, None, None, None
 
         self.load_data(data_path)
 
@@ -121,7 +122,7 @@ class BaseVoxelDataset(Dataset):
             raise Exception("Dataloader failed to intialize all required members")
 
         self.num_pixels = self.sensor_resolution[0] * self.sensor_resolution[1]
-        self.duration = self.tk-self.t0
+        self.duration = self.tk - self.t0
 
         if voxel_method is None:
             voxel_method = {'method': 'between_frames'}
@@ -147,7 +148,7 @@ class BaseVoxelDataset(Dataset):
 
         if max_length is not None:
             self.length = min(self.length, max_length + 1)
-    
+
     def __getitem__(self, index, seed=None):
         """
         Get data at index.
@@ -163,17 +164,17 @@ class BaseVoxelDataset(Dataset):
             ys = torch.zeros((1), dtype=ys.dtype)
             ts = torch.zeros((1), dtype=ts.dtype)
             ps = torch.zeros((1), dtype=ps.dtype)
-        dt = ts[-1]-ts[0] 
+        dt = ts[-1] - ts[0]
 
         voxel = self.get_voxel_grid(xs, ys, ts, ps, combined_voxel_channels=self.combined_voxel_channels)
         voxel = self.transform_voxel(voxel, seed)
 
         if self.voxel_method['method'] == 'between_frames':
-            frame = self.get_frame(index+1)
+            frame = self.get_frame(index + 1)
             frame = self.transform_frame(frame, seed)
 
             if self.has_flow:
-                flow = self.get_flow(index+1)
+                flow = self.get_flow(index + 1)
                 # convert to displacement (pix)
                 flow = flow * dt
                 flow = self.transform_flow(flow, seed)
@@ -183,12 +184,12 @@ class BaseVoxelDataset(Dataset):
             item = {'frame': frame,
                     'flow': flow,
                     'events': voxel,
-                    'timestamp': self.frame_ts[index+1],
+                    'timestamp': self.frame_ts[index + 1],
                     'data_source_idx': self.data_source_idx,
                     'dt': dt}
         else:
             item = {'events': voxel,
-                    'timestamp': self.frame_ts[index+1],
+                    'timestamp': self.frame_ts[index + 1],
                     'data_source_idx': self.data_source_idx,
                     'dt': dt}
         return item
@@ -214,8 +215,8 @@ class BaseVoxelDataset(Dataset):
         timeblock_indices = []
         start_idx = 0
         for i in range(self.__len__()):
-            start_time = (voxel_method['t']-voxel_method['sliding_window_t'])*i
-            end_time = start_time + voxel_method['t']
+            start_time = (self.voxel_method['t'] - self.voxel_method['sliding_window_t']) * i
+            end_time = start_time + self.voxel_method['t']
             end_idx = self.find_ts_index(end_time)
             timeblock_indices.append([start_idx, end_idx])
             start_idx = end_idx
@@ -229,8 +230,8 @@ class BaseVoxelDataset(Dataset):
         k_indices = []
         start_idx = 0
         for i in range(self.__len__()):
-            idx0 = (voxel_method['k']-voxel_method['sliding_window_w'])*index
-            idx1 = idx0 + voxel_method['k']
+            idx0 = (self.voxel_method['k'] - self.voxel_method['sliding_window_w']) * i
+            idx1 = idx0 + self.voxel_method['k']
             k_indices.append(idx0, idx1)
         return k_indices
 
@@ -241,13 +242,13 @@ class BaseVoxelDataset(Dataset):
         """
         self.voxel_method = voxel_method
         if self.voxel_method['method'] == 'k_events':
-            self.length = max(int(self.num_events/(voxel_method['k']-voxel_method['sliding_window_w'])), 0)
+            self.length = max(int(self.num_events / (voxel_method['k'] - voxel_method['sliding_window_w'])), 0)
             self.event_indices = self.compute_k_indices()
         elif self.voxel_method['method'] == 't_seconds':
-            self.length = max(int(self.duration/(voxel_method['t']-voxel_method['sliding_window_t'])), 0)
+            self.length = max(int(self.duration / (voxel_method['t'] - voxel_method['sliding_window_t'])), 0)
             self.event_indices = self.compute_timeblock_indices()
         elif self.voxel_method['method'] == 'between_frames':
-            self.length = self.num_frames-1
+            self.length = self.num_frames - 1
             self.event_indices = self.compute_frame_indices()
         else:
             raise Exception("Invalid voxel forming method chosen ({})".format(self.voxel_method))
@@ -283,8 +284,8 @@ class BaseVoxelDataset(Dataset):
             voxel_grid = events_to_voxel_torch(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_resolution)
         else:
             # generate voxel grid which has size 2*self.num_bins x H x W
-            voxel_grid = events_to_voxel_torch(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_resolution)
-            voxel_grid = events_to_neg_pos_voxel_torch(xs, ys, ts, ps, self.num_bins, sensor_size=self.sensor_resolution)
+            voxel_grid = events_to_neg_pos_voxel_torch(xs, ys, ts, ps, self.num_bins,
+                                                       sensor_size=self.sensor_resolution)
             voxel_grid = torch.cat([voxel_grid[0], voxel_grid[1]], 0)
 
         return voxel_grid
@@ -318,6 +319,7 @@ class BaseVoxelDataset(Dataset):
             flow = self.transform(flow, is_flow=True)
         return flow
 
+
 class DynamicH5Dataset(BaseVoxelDataset):
     """
     Dataloader for events saved in the Monash University HDF5 events format
@@ -333,7 +335,8 @@ class DynamicH5Dataset(BaseVoxelDataset):
     def get_events(self, idx0, idx1):
         xs = torch.from_numpy((self.h5_file['events/xs'][idx0:idx1]).astype(np.float32))
         ys = torch.from_numpy((self.h5_file['events/ys'][idx0:idx1]).astype(np.float32))
-        ts = torch.from_numpy((self.h5_file['events/ts'][idx0:idx1] - self.h5_file['events/ts'][idx0]).astype(np.float32))
+        ts = torch.from_numpy(
+            (self.h5_file['events/ts'][idx0:idx1] - self.h5_file['events/ts'][idx0]).astype(np.float32))
         ps = torch.from_numpy((self.h5_file['events/ps'][idx0:idx1] * 2 - 1).astype(np.float32))
         return xs, ys, ts, ps
 
@@ -346,7 +349,7 @@ class DynamicH5Dataset(BaseVoxelDataset):
         if self.sensor_resolution is None:
             self.sensor_resolution = self.h5_file.attrs['sensor_resolution'][0:2]
         else:
-            self.sensor_resolution = sensor_resolution[0:2]
+            self.sensor_resolution = self.sensor_resolution[0:2]
         print("sensor resolution = {}".format(self.sensor_resolution))
         self.has_flow = 'flow' in self.h5_file.keys() and len(self.h5_file['flow']) > 0
         self.t0 = self.h5_file['events/ts'][0]
@@ -377,6 +380,7 @@ class DynamicH5Dataset(BaseVoxelDataset):
             start_idx = end_idx
         return frame_indices
 
+
 class MemMapDataset(BaseVoxelDataset):
     """
     Dataloader for events saved in the MemMap events format used at RPG.
@@ -396,12 +400,12 @@ class MemMapDataset(BaseVoxelDataset):
         xs = torch.from_numpy(xy[:, 0].astype(np.float32))
         ys = torch.from_numpy(xy[:, 1].astype(np.float32))
         ts = torch.from_numpy((self.filehandle["t"][idx0:idx1] - self.filehandle["t"][idx0]).astype(np.float32))
-        ps = torch.from_numpy((self.filehandle["p"][idx0:idx1]).astype(np.float32)*2.0-1.0)
+        ps = torch.from_numpy((self.filehandle["p"][idx0:idx1]).astype(np.float32) * 2.0 - 1.0)
         return xs, ys, ts, ps
 
-    def load_data(self, data_path, timestamp_fname = "timestamps.npy", image_fname = "images.npy",
-            optic_flow_fname = "optic_flow.npy", optic_flow_stamps_fname = "optic_flow_stamps.npy",
-            t_fname = "t.npy", xy_fname = "xy.npy", p_fname = "p.npy"):
+    def load_data(self, data_path, timestamp_fname="timestamps.npy", image_fname="images.npy",
+                  optic_flow_fname="optic_flow.npy", optic_flow_stamps_fname="optic_flow_stamps.npy",
+                  t_fname="t.npy", xy_fname="xy.npy", p_fname="p.npy"):
 
         assert os.path.isdir(data_path), '%s is not a valid data_pathectory' % data_path
 
@@ -437,7 +441,7 @@ class MemMapDataset(BaseVoxelDataset):
             if len(data) > 0:
                 data['path'] = subroot
                 if "t" not in data:
-                    print(f"Ignoring root {subroot} since no events")
+                    print("Ignoring root {} since no events".format(subroot))
                     continue
                 assert (len(data['p']) == len(data['xy']) and len(data['p']) == len(data['t']))
 
@@ -461,7 +465,7 @@ class MemMapDataset(BaseVoxelDataset):
         if len(self.filehandle["images"]) > 0:
             self.sensor_resolution = self.filehandle["images"][0].shape[-2:]
         else:
-            self.sensor_resolution = [np.max(self.filehandle["xy"][:,1])+1, np.max(self.filehandle["xy"][:,0])+1]
+            self.sensor_resolution = [np.max(self.filehandle["xy"][:, 1]) + 1, np.max(self.filehandle["xy"][:, 0]) + 1]
             print("Inferred sensor resolution: {}".format(self.sensor_resolution))
 
     def find_config(self, data_path):
