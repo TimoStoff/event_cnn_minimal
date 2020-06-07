@@ -3,12 +3,14 @@ import numpy as np
 import random
 import torch
 import h5py
+import os
 # local modules
 from utils.data_augmentation import Compose, RobustNorm
 from utils.data import data_sources
 from events_contrast_maximization.utils.event_utils import events_to_voxel_torch, \
     events_to_neg_pos_voxel_torch, binary_search_torch_tensor, events_to_image_torch, \
     binary_search_h5_dset
+from utils.util import read_json, write_json
 
 class BaseVoxelDataset(Dataset):
 
@@ -28,8 +30,10 @@ class BaseVoxelDataset(Dataset):
         self.load_data(data_path)
 
         if self.sensor_resolution is None or self.has_flow is None or self.t0 is None \
-                or self.tk is None or self.num_events is None or self.frame_ts is None:
+                or self.tk is None or self.num_events is None or self.frame_ts is None \
+                or self.num_frames is None:
             raise Exception("Dataloader failed to initialize")
+
         self.num_pixels = self.sensor_resolution[0] * self.sensor_resolution[1]
         self.duration = self.tk-self.t0
 
@@ -63,6 +67,11 @@ class BaseVoxelDataset(Dataset):
         seed = random.randint(0, 2 ** 32) if seed is None else seed
 
         xs, ys, ts, ps = self.get_events(index)
+        if len(xs) == 0:
+            xs = torch.zeros((1), dtype=xs.dtype)
+            ys = torch.zeros((1), dtype=ys.dtype)
+            ts = torch.zeros((1), dtype=ts.dtype)
+            ps = torch.zeros((1), dtype=ps.dtype)
         dt = ts[-1]-ts[0] 
 
         voxel = self.get_voxel_grid(xs, ys, ts, ps, combined_voxel_channels=self.combined_voxel_channels)
@@ -121,7 +130,7 @@ class BaseVoxelDataset(Dataset):
         start_idx = 0
         for ts in self.frame_ts:
             end_index = self.find_ts_index(ts)
-            frame_indices.append(start_idx, end_index)
+            frame_indices.append([start_idx, end_index])
             start_idx = end_index
         return frame_indices
 
@@ -461,7 +470,7 @@ class DynamicH5Dataset(BaseVoxelDataset):
     #    return item
 
 
-class MemMapDataset(Dataset):
+class MemMapDataset(BaseVoxelDataset):
     """
     Loads time-synchronized, event voxel grids, optic flow and
     standard frames from numpy memmaps containing events, optic flow and
@@ -492,20 +501,25 @@ class MemMapDataset(Dataset):
     """
 
     def get_frame(self, index):
-        frame = self.filehandle['images'][index + 1][:, :, 0]
+        frame = self.filehandle['images'][index][:, :, 0]
+        return frame
 
     def get_flow(self, index):
-        flow = self.filehandle['optic_flow'][index + 1]
+        flow = self.filehandle['optic_flow'][index]
+        return flow
 
     def get_events(self, index):
-        events_xy = filehandle["xy"][idx0:idx1]
-        ts = filehandle["t"][idx0:idx1] - filehandle["t"][idx0]
-        ps = filehandle["p"][idx0:idx1]
-        return xy[:, 0], xy[:, 1], ts, ps
+        idx0, idx1 = self.get_event_indices(index)
+        xy = self.filehandle["xy"][idx0:idx1]
+        xs = torch.from_numpy(xy[:, 0].astype(np.float32))
+        ys = torch.from_numpy(xy[:, 1].astype(np.float32))
+        ts = torch.from_numpy((self.filehandle["t"][idx0:idx1] - self.filehandle["t"][idx0]).astype(np.float32))
+        ps = torch.from_numpy((self.filehandle["p"][idx0:idx1] * 2 - 1).astype(np.float32))
+        return xs, ys, ts, ps
 
     def load_data(self, data_path, timestamp_fname = "timestamps.npy", image_fname = "images.npy",
-            optic_flow_fname = "optic_flow.npy", optic_flow_stamps_fname = "optic_flow_stamps",
-            t_fname = "t.npy", xy_fname = "xy_fname", p_fname = "p_fname"):
+            optic_flow_fname = "optic_flow.npy", optic_flow_stamps_fname = "optic_flow_stamps.npy",
+            t_fname = "t.npy", xy_fname = "xy.npy", p_fname = "p.npy"):
         """
         Load data from files.
         """
@@ -516,26 +530,30 @@ class MemMapDataset(Dataset):
         for subroot, _, fnames in sorted(os.walk(data_path)):
             for fname in sorted(fnames):
                 path = os.path.join(subroot, fname)
+                if fname.endswith(".npy"):
+                    if fname.endswith(timestamp_fname):
+                        frame_stamps = np.load(path)
+                        data["frame_stamps"] = frame_stamps
+                    elif fname.endswith(image_fname):
+                        data["images"] = np.load(path, mmap_mode="r")
+                    elif fname.endswith(optic_flow_fname):
+                        data["optic_flow"] = np.load(path, mmap_mode="r")
+                        self.has_flow = True
+                    elif fname.endswith(optic_flow_stamps_fname):
+                        optic_flow_stamps = np.load(path)
+                        data["optic_flow_stamps"] = optic_flow_stamps
 
-                if fname.endswith(timestamp_fname):
-                    frame_stamps = np.load(path)
-                    data["frame_stamps"] = frame_stamps
-                elif fname.endswith(image_fname):
-                    data["images"] = np.load(path, mmap_mode="r")
-                elif fname.endswith(optic_flow_fname):
-                    data["optic_flow"] = np.load(path, mmap_mode="r")
-                    self.has_flow = True
-                elif fname.endswith(optic_flow_stamps_fname):
-                    optic_flow_stamps = np.load(path)
-                    data["optic_flow_stamps"] = optic_flow_stamps
-
-                handle = np.load(path, mmap_mode="r")
-                if fname.endswith(t_fname):  # timestamps
-                    data["t"] = handle
-                elif fname.endswith(xy_fname):  # coordinates
-                    data["xy"] = handle
-                elif fname.endswith(p_fname):  # polarity
-                    data["p"] = handle
+                    try:
+                        handle = np.load(path, mmap_mode="r")
+                    except Exception as err:
+                        print("Couldn't load {}:".format(path))
+                        raise err
+                    if fname.endswith(t_fname):  # timestamps
+                        data["t"] = handle.squeeze()
+                    elif fname.endswith(xy_fname):  # coordinates
+                        data["xy"] = handle.squeeze()
+                    elif fname.endswith(p_fname):  # polarity
+                        data["p"] = handle.squeeze()
             if len(data) > 0:
                 data['path'] = subroot
                 if "t" not in data:
@@ -543,16 +561,17 @@ class MemMapDataset(Dataset):
                     continue
                 assert (len(data['p']) == len(data['xy']) and len(data['p']) == len(data['t']))
 
-                if "index" not in data and "frame_stamps" in data:
-                    data["index"] = find_event_indices_for_frame(data["t"], data['frame_stamps'])
-
-                self.t0, self.tk = data['t'][0][0], data['t'][-1][0]
+                self.t0, self.tk = data['t'][0], data['t'][-1]
                 self.duration = self.tk-self.t0
                 self.num_events = len(data['p'])
+                self.num_frames = len(data['images'])
+                print("{} contains {} events, {} images spanning {} s".format(data_path, self.num_events, self.num_frames, self.duration))
 
-        self.frame_ts = []
-        for ts in data["frame_stamps"]:
-            self.frame_ts.append(ts)
+                self.frame_ts = []
+                for ts in data["frame_stamps"]:
+                    self.frame_ts.append(ts)
+                data["index"] = self.frame_ts
+
         self.find_config(data_path)
         self.filehandle = data
 
@@ -564,7 +583,7 @@ class MemMapDataset(Dataset):
         return index
 
     def infer_resolution(self):
-        if len(self.filehandle["images"]) > ):
+        if len(self.filehandle["images"]) > 0:
             self.sensor_resolution = self.filehandle["images"][0].shape[-2:]
         else:
             self.sensor_resolution = [np.max(self.filehandle["xy"][:,1])+1, np.max(self.filehandle["xy"][:,0])+1]

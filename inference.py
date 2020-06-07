@@ -91,7 +91,10 @@ def main(args, model):
             if args.is_flow:
                 flow_t = torch.squeeze(crop.crop(output['flow']))
                 # Convert displacement to flow
-                flow = flow_t.cpu().numpy()/item['dt'].numpy()
+                if item['dt'] == 0:
+                    flow = flow_t.cpu().numpy()
+                else:
+                    flow = flow_t.cpu().numpy()/item['dt'].numpy()
                 ts = item['timestamp'].cpu().numpy()
                 flow_dict = {'flow': flow, 'ts': ts}
                 fname = 'flow_{:010d}.npy'.format(i)
@@ -150,7 +153,7 @@ if __name__ == '__main__':
                         help='new voxels are formed every t seconds (required if voxel_method is t_seconds)')
     parser.add_argument('--sliding_window_t', type=float,
                         help='sliding_window size in seconds (required if voxel_method is t_seconds)')
-    parser.add_argument('--loader_type', default='MMP', type=str,
+    parser.add_argument('--loader_type', default='H5', type=str,
                         help='Which data format to load (HDF5 recommended)')
 
     args = parser.parse_args()
