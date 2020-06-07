@@ -48,7 +48,7 @@ def load_model(checkpoint):
 def main(args, model):
     dataset_kwargs = {'transforms': {},
                       'max_length': None,
-                      'sensor_size': None,
+                      'sensor_resolution': None,
                       'num_bins': 5,
                       'voxel_method': {'method': args.voxel_method,
                                        'k': args.k,
@@ -56,12 +56,12 @@ def main(args, model):
                                        'sliding_window_w': args.sliding_window_w,
                                        'sliding_window_t': args.sliding_window_t}
                       }
-    if not args.legacy:
+    if args.update:
         print("Updated style model")
         dataset_kwargs['transforms'] = {'RobustNorm': {}}
         dataset_kwargs['combined_voxel_channels'] = False
 
-    data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs)
+    data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs, ltype=args.loader_type)
 
     height, width = None, None
     for d in data_loader:
@@ -90,7 +90,11 @@ def main(args, model):
             # save sample images, or do something with output here
             if args.is_flow:
                 flow_t = torch.squeeze(crop.crop(output['flow']))
-                flow = flow_t.cpu().numpy()
+                # Convert displacement to flow
+                if item['dt'] == 0:
+                    flow = flow_t.cpu().numpy()
+                else:
+                    flow = flow_t.cpu().numpy()/item['dt'].numpy()
                 ts = item['timestamp'].cpu().numpy()
                 flow_dict = {'flow': flow, 'ts': ts}
                 fname = 'flow_{:010d}.npy'.format(i)
@@ -134,8 +138,8 @@ if __name__ == '__main__':
                         help='indices of GPUs to enable')
     parser.add_argument('--is_flow', action='store_true',
                         help='If true, save output to flow npy file')
-    parser.add_argument('--legacy', action='store_true',
-                        help='Set this if using any of the original networks from ECCV20 paper')
+    parser.add_argument('--update', action='store_true',
+                        help='Set this if using updated models')
     parser.add_argument('--color', action='store_true', default=False,
                       help='Perform color reconstruction')
     parser.add_argument('--voxel_method', default='between_frames', type=str,
@@ -149,6 +153,8 @@ if __name__ == '__main__':
                         help='new voxels are formed every t seconds (required if voxel_method is t_seconds)')
     parser.add_argument('--sliding_window_t', type=float,
                         help='sliding_window size in seconds (required if voxel_method is t_seconds)')
+    parser.add_argument('--loader_type', default='H5', type=str,
+                        help='Which data format to load (HDF5 recommended)')
 
     args = parser.parse_args()
     
