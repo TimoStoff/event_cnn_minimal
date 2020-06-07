@@ -50,7 +50,7 @@ python inference.py --checkpoint_path <path/to/model.pth> --device 0 --h5_file_p
 ```
 For example:
 ```
-python inference.py --checkpoint_path pretrained/reconstruction/reconstruction_model.pth --device 0 --h5_file_path /tmp/h5_events/slider_depth.h5 --output_folder /tmp/reconstruction --legacy
+python inference.py --checkpoint_path pretrained/reconstruction/reconstruction_model.pth --device 0 --h5_file_path /tmp/h5_events/slider_depth.h5 --output_folder /tmp/reconstruction
 ```
 To estimate flow:
 ```
@@ -58,18 +58,20 @@ python inference.py --checkpoint_path <path/to/model.pth> --device 0 --h5_file_p
 ```
 For example:
 ```
-python inference.py --checkpoint_path pretrained/flow/flow_model.pth --device 0 --h5_file_path /tmp/h5_events/slider_depth.h5 --output_folder /tmp/flow --legacy --is_flow
+python inference.py --checkpoint_path pretrained/flow/flow_model.pth --device 0 --h5_file_path /tmp/h5_events/slider_depth.h5 --output_folder /tmp/flow --is_flow
 ```
 Flow is saved as both a png showing HSV color as slow vectors and as npy files. Should look something like this:
 ![Reconstruction](.readme/reonstruction.gif)
 ![Flow](.readme/flow.gif)
 ![Color](.readme/color.gif)
 
-Note that the models reported on in the preprint ["How to Train Your Event Camera Neural Network](https://arxiv.org/abs/2003.09078) loaded the voxels in a slightly different way to more recent versions. Hence when running inference on those models, the `--legacy` flag is necessary. More recent models are denoted by the prefix `update_` and don't require this flag to be set.
-*The update models have not been quantitatively tested and are not necessarily better.*
+We provide some of our more recent models for download. These models are prefixed with _update_ (ie: update\_flow\_model.pth).
+These models have not necessarily been quantitatively evaluated and are not necessarily better than the models reported on in the preprint ["How to Train Your Event Camera Neural Network](https://arxiv.org/abs/2003.09078).
+If you wish to run these models, the flag `--update` is necessary, as the voxels are formed in a slightly different way in the updated models.
+Again, the models from the paper are the ones *without* the prefix 'update'.
 
 ## Training code and dataset
-Training code and dataset will be released when this work is published.
+Training code will be released when this work is published.
 
 # Citations
 Please cite the following if you decide to use this code in an academic context:
