@@ -9,6 +9,7 @@ from .base.base_model import BaseModel
 
 from .unet import UNetFlow, WNet, UNetFlowNoRecur, UNetRecurrent, UNet
 from .submodules import ResidualBlock, ConvGRU, ConvLayer
+from utils.color_utils import merge_channels_into_color_image
 
 
 def copy_states(states):
@@ -19,6 +20,59 @@ def copy_states(states):
     if states[0] is None:
         return copy.deepcopy(states)
     return recursive_clone(states)
+
+
+class ColorNet(BaseModel):
+    """
+    Split the input events into RGBW channels and feed them to an existing
+    recurrent model with states.
+    """
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        self.channels = {'R': [slice(0, None, 2), slice(0, None, 2)],
+                         'G': [slice(0, None, 2), slice(1, None, 2)],
+                         'B': [slice(1, None, 2), slice(1, None, 2)],
+                         'W': [slice(1, None, 2), slice(0, None, 2)],
+                         'grayscale': [slice(None), slice(None)]}
+        self.prev_states = {k: self.model.states for k in self.channels}
+
+    def reset_states(self):
+        self.model.reset_states()
+
+    @property
+    def num_encoders(self):
+        return self.model.num_encoders
+
+    def forward(self, event_tensor):
+        """
+        :param event_tensor: N x num_bins x H x W
+        :return: output dict with RGB image taking values in [0, 1], and
+                 displacement within event_tensor.
+        """
+        height, width = event_tensor.shape[-2:]
+        crop_halfres = CropParameters(int(width / 2), int(height / 2), self.model.num_encoders)
+        crop_fullres = CropParameters(width, height, self.model.num_encoders)
+        color_events = {}
+        reconstructions_for_each_channel = {}
+        for channel, s in self.channels.items():
+            color_events = event_tensor[:, :, s[0], s[1]]
+            if channel == 'grayscale':
+                color_events = crop_fullres.pad(color_events)
+            else:
+                color_events = crop_halfres.pad(color_events)
+            self.model.states = self.prev_states[channel]
+            img = self.model(color_events)['image']
+            self.prev_states[channel] = self.model.states
+            if channel == 'grayscale':
+                img = crop_fullres.crop(img)
+            else:
+                img = crop_halfres.crop(img)
+            img = img[0, 0, ...].cpu().numpy()
+            img = np.clip(img * 255, 0, 255).astype(np.uint8)
+            reconstructions_for_each_channel[channel] = img
+        image_bgr = merge_channels_into_color_image(reconstructions_for_each_channel)  # H x W x 3
+        return {'image': image_bgr}
 
 
 class WFlowNet(BaseModel):
