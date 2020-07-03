@@ -142,7 +142,7 @@ class LegacyNorm(object):
             mean = x.sum() / num_nonzeros
             stddev = torch.sqrt((x ** 2).sum() / num_nonzeros - mean ** 2)
             mask = nonzero.float()
-            x = mask * (x - mean) * / stddev
+            x = mask * (x - mean) / stddev
         return x
 
     def __repr__(self):
