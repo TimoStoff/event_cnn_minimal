@@ -103,6 +103,10 @@ class BaseVoxelDataset(Dataset):
 
     def __init__(self, data_path, transforms={}, sensor_resolution=None, num_bins=5,
                  voxel_method=None, max_length=None, combined_voxel_channels=True):
+        """
+        self.transform applies to event voxels, frames and flow.
+        self.vox_transform applies to event voxels only.
+        """
 
         self.num_bins = num_bins
         self.data_path = data_path
@@ -129,18 +133,16 @@ class BaseVoxelDataset(Dataset):
         self.set_voxel_method(voxel_method)
 
         if 'LegacyNorm' in transforms.keys() and 'RobustNorm' in transforms.keys():
-            raise Exception
+            raise Exception('Cannot specify both LegacyNorm and RobustNorm')
 
         self.normalize_voxels = False
-        if 'RobustNorm' in transforms.keys():
-            vox_transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]
-            del (transforms['RobustNorm'])
-            self.normalize_voxels = True
-            self.vox_transform = Compose(vox_transforms_list)
-        if 'LegacyNorm' in transforms.keys():
-            vox_transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]
-            del (transforms['LegacyNorm'])
-            self.vox_transform = Compose(vox_transforms_list)
+        for norm in ['RobustNorm', 'LegacyNorm']:
+            if norm in transforms.keys():
+                vox_transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]
+                del (transforms[norm])
+                self.normalize_voxels = True
+                self.vox_transform = Compose(vox_transforms_list)
+                break
 
         transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]
 
