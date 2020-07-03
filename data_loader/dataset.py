@@ -5,7 +5,7 @@ import torch
 import h5py
 import os
 # local modules
-from utils.data_augmentation import Compose, RobustNorm
+from utils.data_augmentation import Compose, RobustNorm, LegacyNorm
 from utils.data import data_sources
 from events_contrast_maximization.utils.event_utils import events_to_voxel_torch, \
     events_to_neg_pos_voxel_torch, binary_search_torch_tensor, events_to_image_torch, \
@@ -128,11 +128,18 @@ class BaseVoxelDataset(Dataset):
             voxel_method = {'method': 'between_frames'}
         self.set_voxel_method(voxel_method)
 
+        if 'LegacyNorm' in transforms.keys() and 'RobustNorm' in transforms.keys():
+            raise Exception
+
         self.normalize_voxels = False
         if 'RobustNorm' in transforms.keys():
             vox_transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]
             del (transforms['RobustNorm'])
             self.normalize_voxels = True
+            self.vox_transform = Compose(vox_transforms_list)
+        if 'LegacyNorm' in transforms.keys():
+            vox_transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]
+            del (transforms['LegacyNorm'])
             self.vox_transform = Compose(vox_transforms_list)
 
         transforms_list = [eval(t)(**kwargs) for t, kwargs in transforms.items()]

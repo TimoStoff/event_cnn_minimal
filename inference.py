@@ -61,6 +61,10 @@ def main(args, model):
         dataset_kwargs['transforms'] = {'RobustNorm': {}}
         dataset_kwargs['combined_voxel_channels'] = False
 
+    if args.legacy_voxel_norm:
+        print('Using legacy voxel normalization')
+        dataset_kwargs['transforms'] = {'LegacyNorm': {}}
+
     data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs, ltype=args.loader_type)
 
     height, width = None, None
@@ -155,6 +159,8 @@ if __name__ == '__main__':
                         help='sliding_window size in seconds (required if voxel_method is t_seconds)')
     parser.add_argument('--loader_type', default='H5', type=str,
                         help='Which data format to load (HDF5 recommended)')
+    parser.add_argument('--legacy_voxel_norm', action='store_true', default=False,
+                        help='Normalize nonzero entries in voxel to have mean=0, std=1 according to Rebecq20PAMI and Scheerlinck20WACV')
 
     args = parser.parse_args()
     
