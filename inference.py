@@ -13,6 +13,9 @@ from data_loader.data_loaders import InferenceDataLoader
 from model.model import ColorNet
 from utils.util import CropParameters
 from utils.timers import CudaTimer
+from utils.henri_compatible import make_henri_compatible
+
+from parse_config import ConfigParser
 
 model_info = {}
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -39,9 +42,9 @@ def load_model(checkpoint):
     model.eval()
     if args.color:
         model = ColorNet(model)
-    print(model)
     for param in model.parameters():
         param.requires_grad = False
+
     return model
 
 
@@ -61,7 +64,7 @@ def main(args, model):
         dataset_kwargs['transforms'] = {'RobustNorm': {}}
         dataset_kwargs['combined_voxel_channels'] = False
 
-    if args.legacy_voxel_norm:
+    if args.legacy_norm:
         print('Using legacy voxel normalization')
         dataset_kwargs['transforms'] = {'LegacyNorm': {}}
 
@@ -159,8 +162,12 @@ if __name__ == '__main__':
                         help='sliding_window size in seconds (required if voxel_method is t_seconds)')
     parser.add_argument('--loader_type', default='H5', type=str,
                         help='Which data format to load (HDF5 recommended)')
-    parser.add_argument('--legacy_voxel_norm', action='store_true', default=False,
+    parser.add_argument('--legacy_norm', action='store_true', default=False,
                         help='Normalize nonzero entries in voxel to have mean=0, std=1 according to Rebecq20PAMI and Scheerlinck20WACV')
+    parser.add_argument('--e2vid', action='store_true', default=False,
+                        help='set required parameters to run original e2vid as described in Rebecq20PAMI')
+    parser.add_argument('--firenet', action='store_true', default=False,
+                        help='set required parameters to run original e2vid as described in Scheerlinck20WACV')
 
     args = parser.parse_args()
     
@@ -169,7 +176,14 @@ if __name__ == '__main__':
     kwargs = {}
     print('Loading checkpoint: {} ...'.format(args.checkpoint_path))
     checkpoint = torch.load(args.checkpoint_path)
+    # Make compatible with Henri saved models
+    if not isinstance(checkpoint.get('config', None), ConfigParser) or args.e2vid or args.firenet:
+        final_activation = 'sigmoid' if args.e2vid else ''
+        checkpoint = make_henri_compatible(checkpoint, final_activation)
     kwargs['checkpoint'] = checkpoint
+
+    if args.e2vid or args.firenet:
+        args.legacy_norm = True
 
     model = load_model(**kwargs)
     main(args, model)

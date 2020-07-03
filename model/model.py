@@ -11,6 +11,8 @@ from .unet import UNetFlow, WNet, UNetFlowNoRecur, UNetRecurrent, UNet
 from .submodules import ResidualBlock, ConvGRU, ConvLayer
 from utils.color_utils import merge_channels_into_color_image
 
+from .legacy import FireNet_legacy as FireNet
+
 
 def copy_states(states):
     """

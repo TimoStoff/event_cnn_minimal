@@ -130,7 +130,7 @@ class LegacyNorm(object):
     """
     Rescale tensor to mean=0 and standard deviation std=1
     """
-    def __call__(self, x):
+    def __call__(self, x, is_flow=False):
         """
         Compute mean and stddev of the **nonzero** elements of the event tensor
         we do not use PyTorch's default mean() and std() functions since it's faster
