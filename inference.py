@@ -65,7 +65,7 @@ def main(args, model):
         print('Using legacy voxel normalization')
         dataset_kwargs['transforms'] = {'LegacyNorm': {}}
 
-    data_loader = InferenceDataLoader(args.h5_file_path, dataset_kwargs=dataset_kwargs, ltype=args.loader_type)
+    data_loader = InferenceDataLoader(args.events_file_path, dataset_kwargs=dataset_kwargs, ltype=args.loader_type)
 
     height, width = None, None
     for d in data_loader:
@@ -100,7 +100,7 @@ def main(args, model):
                 else:
                     flow = flow_t.cpu().numpy()/item['dt'].numpy()
                 ts = item['timestamp'].cpu().numpy()
-                flow_dict = {'flow': flow, 'ts': ts}
+                flow_dict = flow
                 fname = 'flow_{:010d}.npy'.format(i)
                 np.save(os.path.join(args.output_folder, fname), flow_dict)
                 with open(os.path.join(args.output_folder, fname), "a") as myfile:
@@ -134,8 +134,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch Template')
     parser.add_argument('--checkpoint_path', required=True, type=str,
                         help='path to latest checkpoint (default: None)')
-    parser.add_argument('--h5_file_path', required=True, type=str,
-                        help='path to hdf5 events')
+    parser.add_argument('--events_file_path', required=True, type=str,
+                        help='path to events (HDF5)')
     parser.add_argument('--output_folder', default="/tmp/output", type=str,
                         help='where to save outputs to')
     parser.add_argument('--device', default='0', type=str,

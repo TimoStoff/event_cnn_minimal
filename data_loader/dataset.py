@@ -199,14 +199,14 @@ class BaseVoxelDataset(Dataset):
             item = {'frame': frame,
                     'flow': flow,
                     'events': voxel,
-                    'timestamp': ts_k,
+                    'timestamp': torch.tensor(ts_k, dtype=torch.float64),
                     'data_source_idx': self.data_source_idx,
-                    'dt': dt}
+                    'dt': torch.tensor(dt, dtype=torch.float64)}
         else:
             item = {'events': voxel,
-                    'timestamp': ts_k,
+                    'timestamp': torch.tensor(ts_k, dtype=torch.float64),
                     'data_source_idx': self.data_source_idx,
-                    'dt': dt}
+                    'dt': torch.tensor(dt, dtype=torch.float64)}
         return item
 
     def compute_frame_indices(self):
