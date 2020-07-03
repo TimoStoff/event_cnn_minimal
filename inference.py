@@ -96,7 +96,7 @@ def main(args, model):
                 else:
                     flow = flow_t.cpu().numpy()/item['dt'].numpy()
                 ts = item['timestamp'].cpu().numpy()
-                flow_dict = {'flow': flow, 'ts': ts}
+                flow_dict = flow
                 fname = 'flow_{:010d}.npy'.format(i)
                 np.save(os.path.join(args.output_folder, fname), flow_dict)
                 with open(os.path.join(args.output_folder, fname), "a") as myfile:
