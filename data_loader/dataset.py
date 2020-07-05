@@ -470,8 +470,8 @@ class MemMapDataset(BaseVoxelDataset):
                     self.frame_ts.append(ts)
                 data["index"] = self.frame_ts
 
-        self.find_config(data_path)
         self.filehandle = data
+        self.find_config(data_path)
 
     def find_ts_index(self, timestamp):
         index = np.searchsorted(self.filehandle["t"], timestamp)
@@ -479,10 +479,10 @@ class MemMapDataset(BaseVoxelDataset):
 
     def infer_resolution(self):
         if len(self.filehandle["images"]) > 0:
-            self.sensor_resolution = self.filehandle["images"][0].shape[-2:]
+            return self.filehandle["images"][0].shape[:2]
         else:
-            self.sensor_resolution = [np.max(self.filehandle["xy"][:, 1]) + 1, np.max(self.filehandle["xy"][:, 0]) + 1]
-            print("Inferred sensor resolution: {}".format(self.sensor_resolution))
+            print('WARNING: sensor resolution inferred from maximum event coordinates - highly not recommended')
+            return [np.max(self.filehandle["xy"][:, 1]) + 1, np.max(self.filehandle["xy"][:, 0]) + 1]
 
     def find_config(self, data_path):
         if self.sensor_resolution is None:
@@ -494,3 +494,4 @@ class MemMapDataset(BaseVoxelDataset):
             else:
                 data_source = 'unknown'
                 self.sensor_resolution = self.infer_resolution()
+                print("Inferred sensor resolution: {}".format(self.sensor_resolution))
