@@ -123,3 +123,28 @@ class RobustNorm(object):
         format_string += '(top_perc={:.2f}'.format(self.top_perc)
         format_string += ', low_perc={:.2f})'.format(self.low_perc)
         return format_string
+
+
+class LegacyNorm(object):
+
+    """
+    Rescale tensor to mean=0 and standard deviation std=1
+    """
+    def __call__(self, x, is_flow=False):
+        """
+        Compute mean and stddev of the **nonzero** elements of the event tensor
+        we do not use PyTorch's default mean() and std() functions since it's faster
+        to compute it by hand than applying those funcs to a masked array
+        """
+        nonzero = (x != 0)
+        num_nonzeros = nonzero.sum()
+        if num_nonzeros > 0:
+            mean = x.sum() / num_nonzeros
+            stddev = torch.sqrt((x ** 2).sum() / num_nonzeros - mean ** 2)
+            mask = nonzero.float()
+            x = mask * (x - mean) / stddev
+        return x
+
+    def __repr__(self):
+        format_string = self.__class__.__name__
+        return format_string
