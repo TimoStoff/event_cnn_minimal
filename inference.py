@@ -123,7 +123,7 @@ def main(args, model):
                     image = (image * 255).astype(np.uint8)
                 fname = 'frame_{:010d}.png'.format(i)
                 cv2.imwrite(join(args.output_folder, fname), image)
-            ts_file.write('{:.15f}\n'.format(item['timestamp'].item()))
+            ts_file.write('{} {:.15f}\n'.format(fname, item['timestamp'].item()))
 
 
 # def print_model_info():

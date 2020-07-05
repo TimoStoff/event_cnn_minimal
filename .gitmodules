@@ -1,3 +1,6 @@
 [submodule "events_contrast_maximization"]
 	path = events_contrast_maximization
 	url = git@github.com:TimoStoff/events_contrast_maximization.git
+[submodule "evaluation"]
+	path = evaluation
+	url = git@github.com:cedric-scheerlinck/evaluation.git
