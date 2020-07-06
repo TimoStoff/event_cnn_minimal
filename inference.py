@@ -166,8 +166,8 @@ if __name__ == '__main__':
                         help='Normalize nonzero entries in voxel to have mean=0, std=1 according to Rebecq20PAMI and Scheerlinck20WACV')
     parser.add_argument('--e2vid', action='store_true', default=False,
                         help='set required parameters to run original e2vid as described in Rebecq20PAMI')
-    parser.add_argument('--firenet', action='store_true', default=False,
-                        help='set required parameters to run original e2vid as described in Scheerlinck20WACV')
+    parser.add_argument('--firenet_legacy', action='store_true', default=False,
+                        help='set required parameters to run legacy firenet as described in Scheerlinck20WACV (not for retrained models using updated code)')
 
     args = parser.parse_args()
     
@@ -176,14 +176,19 @@ if __name__ == '__main__':
     kwargs = {}
     print('Loading checkpoint: {} ...'.format(args.checkpoint_path))
     checkpoint = torch.load(args.checkpoint_path)
-    # Make compatible with Henri saved models
-    if not isinstance(checkpoint.get('config', None), ConfigParser) or args.e2vid or args.firenet:
-        final_activation = 'sigmoid' if args.e2vid else ''
-        checkpoint = make_henri_compatible(checkpoint, final_activation)
-    kwargs['checkpoint'] = checkpoint
-
-    if args.e2vid or args.firenet:
+    assert not (args.e2vid and args.firenet_legacy)
+    if args.e2vid:
         args.legacy_norm = True
+        final_activation = 'sigmoid'
+    elif args.firenet_legacy:
+        args.legacy_norm = True
+        final_activation = ''
+    # Make compatible with Henri saved models
+    if not isinstance(checkpoint.get('config', None), ConfigParser) or args.e2vid or args.firenet_legacy:
+        checkpoint = make_henri_compatible(checkpoint, final_activation)
 
-    model = load_model(**kwargs)
+    if args.firenet_legacy:
+        checkpoint['config']['arch']['type'] = 'FireNet_legacy'
+
+    model = load_model(checkpoint)
     main(args, model)
