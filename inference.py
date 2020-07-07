@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import torch
 import numpy as np
 from os.path import join
@@ -19,6 +20,26 @@ from parse_config import ConfigParser
 
 model_info = {}
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+def torch2cv2(image):
+    """convert torch tensor to format compatible with cv2.imwrite"""
+    image = torch.squeeze(image)  # H x W
+    image = image.cpu().numpy()  # normalize here
+    image = np.clip(image, 0, 1)  # normalize here
+    return (image * 255).astype(np.uint8)
+
+def setup_output_folder(output_folder):
+    """return the filename for the timestamps file"""
+    ensure_dir(output_folder)
+    print('Saving to: {}'.format(output_folder))
+    ts_fname = join(output_folder, 'timestamps.txt')
+    open(ts_fname, 'w').close()  # overwrite with emptiness
+    return ts_fname
+
+def append_timestamp(filename, image_rel_path, timestamp):
+    with open(filename, 'a') as f:
+        f.write('{} {:.15f}\n'.format(image_rel_path, timestamp))
 
 
 def load_model(checkpoint):
@@ -84,46 +105,49 @@ def main(args, model):
     tmp_voxel = crop.pad(torch.randn(1, model_info['num_bins'], height, width).to(device))
     model_info['FLOPs'], model_info['Params'] = profile(model, inputs=(tmp_voxel, ))
 
-    ensure_dir(args.output_folder)
-    print('Saving to: {}'.format(args.output_folder))
-    with open(join(args.output_folder, 'timestamps.txt'), 'w+') as ts_file:
-        model.reset_states()
-        for i, item in enumerate(tqdm(data_loader)):
-            voxel = item['events'].to(device)
-            if not args.color:
-                voxel = crop.pad(voxel)
-            with CudaTimer('Inference'):
-                output = model(voxel)
-            # save sample images, or do something with output here
-            if args.is_flow:
-                flow_t = torch.squeeze(crop.crop(output['flow']))
-                # Convert displacement to flow
-                if item['dt'] == 0:
-                    flow = flow_t.cpu().numpy()
-                else:
-                    flow = flow_t.cpu().numpy()/item['dt'].numpy()
-                ts = item['timestamp'].cpu().numpy()
-                flow_dict = flow
-                fname = 'flow_{:010d}.npy'.format(i)
-                np.save(os.path.join(args.output_folder, fname), flow_dict)
-                with open(os.path.join(args.output_folder, fname), "a") as myfile:
-                    myfile.write("\n")
-                    myfile.write("timestamp: {:.10f}".format(ts[0]))
-                flow_img = flow2bgr_np(flow[0, :, :], flow[1, :, :])
-                fname = 'flow_{:010d}.png'.format(i)
-                cv2.imwrite(os.path.join(args.output_folder, fname), flow_img)
+    ts_fname = setup_output_folder(args.output_folder)
+    if args.output_folder_gt:
+        ts_fname_gt = setup_output_folder(args.output_folder_gt)
+    
+    model.reset_states()
+    for i, item in enumerate(tqdm(data_loader)):
+        voxel = item['events'].to(device)
+        if not args.color:
+            voxel = crop.pad(voxel)
+        with CudaTimer('Inference'):
+            output = model(voxel)
+        # save sample images, or do something with output here
+        if args.is_flow:
+            flow_t = torch.squeeze(crop.crop(output['flow']))
+            # Convert displacement to flow
+            if item['dt'] == 0:
+                flow = flow_t.cpu().numpy()
             else:
-                if args.color:
-                    image = output['image']
-                else:
-                    image = crop.crop(output['image'])
-                    image = torch.squeeze(image)  # H x W
-                    image = image.cpu().numpy()  # normalize here
-                    image = np.clip(image, 0, 1)  # normalize here
-                    image = (image * 255).astype(np.uint8)
-                fname = 'frame_{:010d}.png'.format(i)
-                cv2.imwrite(join(args.output_folder, fname), image)
-            ts_file.write('{} {:.15f}\n'.format(fname, item['timestamp'].item()))
+                flow = flow_t.cpu().numpy()/item['dt'].numpy()
+            ts = item['timestamp'].cpu().numpy()
+            flow_dict = flow
+            fname = 'flow_{:010d}.npy'.format(i)
+            np.save(os.path.join(args.output_folder, fname), flow_dict)
+            with open(os.path.join(args.output_folder, fname), "a") as myfile:
+                myfile.write("\n")
+                myfile.write("timestamp: {:.10f}".format(ts[0]))
+            flow_img = flow2bgr_np(flow[0, :, :], flow[1, :, :])
+            fname = 'flow_{:010d}.png'.format(i)
+            cv2.imwrite(os.path.join(args.output_folder, fname), flow_img)
+        else:
+            if args.color:
+                image = output['image']
+            else:
+                image = crop.crop(output['image'])
+                image = torch2cv2(image)
+            fname = 'frame_{:010d}.png'.format(i)
+            cv2.imwrite(join(args.output_folder, fname), image)
+            if args.output_folder_gt:
+                image_gt = item['frame']
+                image_gt = torch2cv2(image_gt)
+                cv2.imwrite(join(args.output_folder_gt, fname), image_gt)
+                append_timestamp(ts_fname_gt, fname, item['timestamp'].item())
+        append_timestamp(ts_fname, fname, item['timestamp'].item())
 
 
 # def print_model_info():
@@ -141,6 +165,8 @@ if __name__ == '__main__':
                         help='path to events (HDF5)')
     parser.add_argument('--output_folder', default="/tmp/output", type=str,
                         help='where to save outputs to')
+    parser.add_argument('--output_folder_gt', default='', type=str,
+                        help='where to save groundtruth to')
     parser.add_argument('--device', default='0', type=str,
                         help='indices of GPUs to enable')
     parser.add_argument('--is_flow', action='store_true',
