@@ -160,9 +160,9 @@ def torch2cv2(image):
     return (image * 255).astype(np.uint8)
 
 
-def append_timestamp(filename, image_rel_path, timestamp):
-    with open(filename, 'a') as f:
-        f.write('{} {:.15f}\n'.format(image_rel_path, timestamp))
+def append_timestamp(path, description, timestamp):
+    with open(path, 'a') as f:
+        f.write('{} {:.15f}\n'.format(description, timestamp))
 
 
 def setup_output_folder(output_folder):
