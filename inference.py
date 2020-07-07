@@ -11,7 +11,8 @@ from utils.util import ensure_dir, flow2bgr_np
 from model import model as model_arch
 from data_loader.data_loaders import InferenceDataLoader
 from model.model import ColorNet
-from utils.util import CropParameters
+from utils.util import CropParameters, get_height_width, torch2cv2, \
+                       append_timestamp, setup_output_folder
 from utils.timers import CudaTimer
 from utils.henri_compatible import make_henri_compatible
 
@@ -20,28 +21,21 @@ from parse_config import ConfigParser
 model_info = {}
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def get_height_width(data_loader):
-    for d in data_loader:
-        return d['events'].shape[-2:]  # d['events'] is a ... x H x W voxel grid 
 
-def torch2cv2(image):
-    """convert torch tensor to format compatible with cv2.imwrite"""
-    image = torch.squeeze(image)  # H x W
-    image = image.cpu().numpy() 
-    image = np.clip(image, 0, 1)
-    return (image * 255).astype(np.uint8)
-
-def setup_output_folder(output_folder):
-    """return the filename for the timestamps file"""
-    ensure_dir(output_folder)
-    print('Saving to: {}'.format(output_folder))
-    ts_fname = join(output_folder, 'timestamps.txt')
-    open(ts_fname, 'w').close()  # overwrite with emptiness
-    return ts_fname
-
-def append_timestamp(filename, image_rel_path, timestamp):
-    with open(filename, 'a') as f:
-        f.write('{} {:.15f}\n'.format(image_rel_path, timestamp))
+def legacy_compatibility(args, checkpoint):
+    assert not (args.e2vid and args.firenet_legacy)
+    if args.e2vid:
+        args.legacy_norm = True
+        final_activation = 'sigmoid'
+    elif args.firenet_legacy:
+        args.legacy_norm = True
+        final_activation = ''
+    # Make compatible with Henri saved models
+    if not isinstance(checkpoint.get('config', None), ConfigParser) or args.e2vid or args.firenet_legacy:
+        checkpoint = make_henri_compatible(checkpoint, final_activation)
+    if args.firenet_legacy:
+        checkpoint['config']['arch']['type'] = 'FireNet_legacy'
+    return args, checkpoint
 
 
 def load_model(checkpoint):
@@ -166,7 +160,8 @@ if __name__ == '__main__':
     parser.add_argument('--loader_type', default='H5', type=str,
                         help='Which data format to load (HDF5 recommended)')
     parser.add_argument('--legacy_norm', action='store_true', default=False,
-                        help='Normalize nonzero entries in voxel to have mean=0, std=1 according to Rebecq20PAMI and Scheerlinck20WACV')
+                        help='Normalize nonzero entries in voxel to have mean=0, std=1 according to Rebecq20PAMI and Scheerlinck20WACV.'
+                        'If --e2vid or --firenet_legacy are set, --legacy_norm will be set to True (default False).')
     parser.add_argument('--e2vid', action='store_true', default=False,
                         help='set required parameters to run original e2vid as described in Rebecq20PAMI')
     parser.add_argument('--firenet_legacy', action='store_true', default=False,
@@ -178,20 +173,6 @@ if __name__ == '__main__':
         os.environ['CUDA_VISIBLE_DEVICES'] = args.device
     print('Loading checkpoint: {} ...'.format(args.checkpoint_path))
     checkpoint = torch.load(args.checkpoint_path)
-    checkpoint = 
-    assert not (args.e2vid and args.firenet_legacy)
-    if args.e2vid:
-        args.legacy_norm = True
-        final_activation = 'sigmoid'
-    elif args.firenet_legacy:
-        args.legacy_norm = True
-        final_activation = ''
-    # Make compatible with Henri saved models
-    if not isinstance(checkpoint.get('config', None), ConfigParser) or args.e2vid or args.firenet_legacy:
-        checkpoint = make_henri_compatible(checkpoint, final_activation)
-
-    if args.firenet_legacy:
-        checkpoint['config']['arch']['type'] = 'FireNet_legacy'
-
+    args, checkpoint = legacy_compatibility(args, checkpoint)
     model = load_model(checkpoint)
     main(args, model)

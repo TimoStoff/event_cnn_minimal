@@ -7,6 +7,8 @@ from itertools import repeat
 from collections import OrderedDict
 from math import fabs, ceil, floor
 from torch.nn import ZeroPad2d
+from os.path import join
+import torch
 
 
 def ensure_dir(dirname):
@@ -130,6 +132,7 @@ def flow2bgr_np(disp_x, disp_y, max_magnitude=None):
 
     return bgr
 
+
 def recursive_clone(tensor):
     """
     Assumes tensor is a torch.tensor with 'clone()' method, possibly
@@ -142,3 +145,33 @@ def recursive_clone(tensor):
         return type(tensor)(recursive_clone(t) for t in tensor)
     except TypeError:
         print('{} is not iterable and has no clone() method.'.format(tensor))
+
+
+def get_height_width(data_loader):
+    for d in data_loader:
+        return d['events'].shape[-2:]  # d['events'] is a ... x H x W voxel grid 
+
+
+def torch2cv2(image):
+    """convert torch tensor to format compatible with cv2.imwrite"""
+    image = torch.squeeze(image)  # H x W
+    image = image.cpu().numpy() 
+    image = np.clip(image, 0, 1)
+    return (image * 255).astype(np.uint8)
+
+
+def append_timestamp(filename, image_rel_path, timestamp):
+    with open(filename, 'a') as f:
+        f.write('{} {:.15f}\n'.format(image_rel_path, timestamp))
+
+
+def setup_output_folder(output_folder):
+    """
+    Ensure existence of output_folder and overwrite output_folder/timestamps.txt file.
+    Returns path to output_folder/timestamps.txt
+    """
+    ensure_dir(output_folder)
+    print('Saving to: {}'.format(output_folder))
+    timestamps_path = join(output_folder, 'timestamps.txt')
+    open(timestamps_path, 'w').close()  # overwrite with emptiness
+    return timestamps_path
