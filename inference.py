@@ -4,14 +4,14 @@ import numpy as np
 from os.path import join
 import os
 import cv2
-from thop import profile
 from tqdm import tqdm
 
 from utils.util import ensure_dir, flow2bgr_np
 from model import model as model_arch
 from data_loader.data_loaders import InferenceDataLoader
 from model.model import ColorNet
-from utils.util import CropParameters
+from utils.util import CropParameters, get_height_width, torch2cv2, \
+                       append_timestamp, setup_output_folder
 from utils.timers import CudaTimer
 from utils.henri_compatible import make_henri_compatible
 
@@ -19,6 +19,22 @@ from parse_config import ConfigParser
 
 model_info = {}
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+def legacy_compatibility(args, checkpoint):
+    assert not (args.e2vid and args.firenet_legacy)
+    if args.e2vid:
+        args.legacy_norm = True
+        final_activation = 'sigmoid'
+    elif args.firenet_legacy:
+        args.legacy_norm = True
+        final_activation = ''
+    # Make compatible with Henri saved models
+    if not isinstance(checkpoint.get('config', None), ConfigParser) or args.e2vid or args.firenet_legacy:
+        checkpoint = make_henri_compatible(checkpoint, final_activation)
+    if args.firenet_legacy:
+        checkpoint['config']['arch']['type'] = 'FireNet_legacy'
+    return args, checkpoint
 
 
 def load_model(checkpoint):
@@ -70,67 +86,47 @@ def main(args, model):
 
     data_loader = InferenceDataLoader(args.events_file_path, dataset_kwargs=dataset_kwargs, ltype=args.loader_type)
 
-    height, width = None, None
-    for d in data_loader:
-        height, width = d['events'].shape[-2:]
-        break
-    if height is None or width is None:
-        raise Exception("Could not determine width+height")
+    height, width = get_height_width(data_loader)
 
     model_info['input_shape'] = height, width
     crop = CropParameters(width, height, model.num_encoders)
 
-    # count FLOPs
-    tmp_voxel = crop.pad(torch.randn(1, model_info['num_bins'], height, width).to(device))
-    model_info['FLOPs'], model_info['Params'] = profile(model, inputs=(tmp_voxel, ))
-
-    ensure_dir(args.output_folder)
-    print('Saving to: {}'.format(args.output_folder))
-    with open(join(args.output_folder, 'timestamps.txt'), 'w+') as ts_file:
-        model.reset_states()
-        for i, item in enumerate(tqdm(data_loader)):
-            voxel = item['events'].to(device)
-            if not args.color:
-                voxel = crop.pad(voxel)
-            with CudaTimer('Inference'):
-                output = model(voxel)
-            # save sample images, or do something with output here
-            if args.is_flow:
-                flow_t = torch.squeeze(crop.crop(output['flow']))
-                # Convert displacement to flow
-                if item['dt'] == 0:
-                    flow = flow_t.cpu().numpy()
-                else:
-                    flow = flow_t.cpu().numpy()/item['dt'].numpy()
-                ts = item['timestamp'].cpu().numpy()
-                flow_dict = flow
-                fname = 'flow_{:010d}.npy'.format(i)
-                np.save(os.path.join(args.output_folder, fname), flow_dict)
-                with open(os.path.join(args.output_folder, fname), "a") as myfile:
-                    myfile.write("\n")
-                    myfile.write("timestamp: {:.10f}".format(ts[0]))
-                flow_img = flow2bgr_np(flow[0, :, :], flow[1, :, :])
-                fname = 'flow_{:010d}.png'.format(i)
-                cv2.imwrite(os.path.join(args.output_folder, fname), flow_img)
+    ts_fname = setup_output_folder(args.output_folder)
+    
+    model.reset_states()
+    for i, item in enumerate(tqdm(data_loader)):
+        voxel = item['events'].to(device)
+        if not args.color:
+            voxel = crop.pad(voxel)
+        with CudaTimer('Inference'):
+            output = model(voxel)
+        # save sample images, or do something with output here
+        if args.is_flow:
+            flow_t = torch.squeeze(crop.crop(output['flow']))
+            # Convert displacement to flow
+            if item['dt'] == 0:
+                flow = flow_t.cpu().numpy()
             else:
-                if args.color:
-                    image = output['image']
-                else:
-                    image = crop.crop(output['image'])
-                    image = torch.squeeze(image)  # H x W
-                    image = image.cpu().numpy()  # normalize here
-                    image = np.clip(image, 0, 1)  # normalize here
-                    image = (image * 255).astype(np.uint8)
-                fname = 'frame_{:010d}.png'.format(i)
-                cv2.imwrite(join(args.output_folder, fname), image)
-            ts_file.write('{:.15f}\n'.format(item['timestamp'].item()))
-
-
-# def print_model_info():
-#     print('Input shape: {} x {} x {}'.format(model_info.pop('num_bins'), *model_info.pop('input_shape')))
-#     print('== Model statistics ==')
-#     for k, v in model_info.items():
-#         print('{}: {:.2f} {}'.format(k, *format_power(v)))
+                flow = flow_t.cpu().numpy() / item['dt'].numpy()
+            ts = item['timestamp'].cpu().numpy()
+            flow_dict = flow
+            fname = 'flow_{:010d}.npy'.format(i)
+            np.save(os.path.join(args.output_folder, fname), flow_dict)
+            with open(os.path.join(args.output_folder, fname), "a") as myfile:
+                myfile.write("\n")
+                myfile.write("timestamp: {:.10f}".format(ts[0]))
+            flow_img = flow2bgr_np(flow[0, :, :], flow[1, :, :])
+            fname = 'flow_{:010d}.png'.format(i)
+            cv2.imwrite(os.path.join(args.output_folder, fname), flow_img)
+        else:
+            if args.color:
+                image = output['image']
+            else:
+                image = crop.crop(output['image'])
+                image = torch2cv2(image)
+            fname = 'frame_{:010d}.png'.format(i)
+            cv2.imwrite(join(args.output_folder, fname), image)
+        append_timestamp(ts_fname, fname, item['timestamp'].item())
 
 
 if __name__ == '__main__':
@@ -163,27 +159,19 @@ if __name__ == '__main__':
     parser.add_argument('--loader_type', default='H5', type=str,
                         help='Which data format to load (HDF5 recommended)')
     parser.add_argument('--legacy_norm', action='store_true', default=False,
-                        help='Normalize nonzero entries in voxel to have mean=0, std=1 according to Rebecq20PAMI and Scheerlinck20WACV')
+                        help='Normalize nonzero entries in voxel to have mean=0, std=1 according to Rebecq20PAMI and Scheerlinck20WACV.'
+                        'If --e2vid or --firenet_legacy are set, --legacy_norm will be set to True (default False).')
     parser.add_argument('--e2vid', action='store_true', default=False,
                         help='set required parameters to run original e2vid as described in Rebecq20PAMI')
-    parser.add_argument('--firenet', action='store_true', default=False,
-                        help='set required parameters to run original e2vid as described in Scheerlinck20WACV')
+    parser.add_argument('--firenet_legacy', action='store_true', default=False,
+                        help='set required parameters to run legacy firenet as described in Scheerlinck20WACV (not for retrained models using updated code)')
 
     args = parser.parse_args()
     
     if args.device is not None:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.device
-    kwargs = {}
     print('Loading checkpoint: {} ...'.format(args.checkpoint_path))
     checkpoint = torch.load(args.checkpoint_path)
-    # Make compatible with Henri saved models
-    if not isinstance(checkpoint.get('config', None), ConfigParser) or args.e2vid or args.firenet:
-        final_activation = 'sigmoid' if args.e2vid else ''
-        checkpoint = make_henri_compatible(checkpoint, final_activation)
-    kwargs['checkpoint'] = checkpoint
-
-    if args.e2vid or args.firenet:
-        args.legacy_norm = True
-
-    model = load_model(**kwargs)
+    args, checkpoint = legacy_compatibility(args, checkpoint)
+    model = load_model(checkpoint)
     main(args, model)

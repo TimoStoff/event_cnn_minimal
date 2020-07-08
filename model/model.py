@@ -11,7 +11,7 @@ from .unet import UNetFlow, WNet, UNetFlowNoRecur, UNetRecurrent, UNet
 from .submodules import ResidualBlock, ConvGRU, ConvLayer
 from utils.color_utils import merge_channels_into_color_image
 
-from .legacy import FireNet_legacy as FireNet
+from .legacy import FireNet_legacy
 
 
 def copy_states(states):
@@ -230,3 +230,53 @@ class EVFlowNet(BaseModel):
         flow = self.unet.forward(event_tensor)
         # to make compatible with our training/inference code that expects an image, make a dummy image.
         return {'flow': flow, 'image': 0 * flow[..., 0:1, :, :]}
+
+
+class FireNet(BaseModel):
+    """
+    Refactored version of model from the paper: "Fast Image Reconstruction with an Event Camera", Scheerlinck et. al., 2019.
+    The model is essentially a lighter version of E2VID, which runs faster (~2-3x faster) and has considerably less parameters (~200x less).
+    However, the reconstructions are not as high quality as E2VID: they suffer from smearing artefacts, and initialization takes longer.
+    """
+    def __init__(self, num_bins=5, base_num_channels=16, kernel_size=3, unet_kwargs={}):
+        super().__init__()
+        if unet_kwargs:  # legacy compatibility - modern config should not have unet_kwargs
+            num_bins = unet_kwargs.get('num_bins', num_bins)
+            base_num_channels = unet_kwargs.get('base_num_channels', base_num_channels)
+            kernel_size = unet_kwargs.get('kernel_size', kernel_size)
+        self.num_bins = num_bins
+        padding = kernel_size // 2
+        self.head = ConvLayer(self.num_bins, base_num_channels, kernel_size, padding=padding)
+        self.G1 = ConvGRU(base_num_channels, base_num_channels, kernel_size)
+        self.R1 = ResidualBlock(base_num_channels, base_num_channels)
+        self.G2 = ConvGRU(base_num_channels, base_num_channels, kernel_size)
+        self.R2 = ResidualBlock(base_num_channels, base_num_channels)
+        self.pred = ConvLayer(base_num_channels, out_channels=1, kernel_size=1, activation=None)
+        self.num_encoders = 0  # needed by image_reconstructor.py
+        self.num_recurrent_units = 2
+        self.reset_states()
+
+    @property
+    def states(self):
+        return copy_states(self._states)
+
+    @states.setter
+    def states(self, states):
+        self._states = states
+
+    def reset_states(self):
+        self._states = [None] * self.num_recurrent_units
+
+    def forward(self, x):
+        """
+        :param x: N x num_input_channels x H x W event tensor
+        :return: N x num_output_channels x H x W image
+        """
+        x = self.head(x)
+        x = self.G1(x, self._states[0])
+        self._states[0] = x
+        x = self.R1(x)
+        x = self.G2(x, self._states[1])
+        self._states[1] = x
+        x = self.R2(x)
+        return {'image': self.pred(x)}
