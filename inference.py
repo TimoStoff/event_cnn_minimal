@@ -69,6 +69,7 @@ def main(args, model):
                       'max_length': None,
                       'sensor_resolution': None,
                       'num_bins': 5,
+                      'filter_hot_events': args.filter_hot_events,
                       'voxel_method': {'method': args.voxel_method,
                                        'k': args.k,
                                        't': args.t,
@@ -158,6 +159,8 @@ if __name__ == '__main__':
                         help='sliding_window size in seconds (required if voxel_method is t_seconds)')
     parser.add_argument('--loader_type', default='H5', type=str,
                         help='Which data format to load (HDF5 recommended)')
+    parser.add_argument('--filter_hot_events', action='store_true',
+                        help='If true, auto-detect and remove hot pixels')
     parser.add_argument('--legacy_norm', action='store_true', default=False,
                         help='Normalize nonzero entries in voxel to have mean=0, std=1 according to Rebecq20PAMI and Scheerlinck20WACV.'
                         'If --e2vid or --firenet_legacy are set, --legacy_norm will be set to True (default False).')

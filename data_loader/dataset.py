@@ -9,7 +9,7 @@ from utils.data_augmentation import Compose, RobustNorm, LegacyNorm
 from utils.data import data_sources
 from events_contrast_maximization.utils.event_utils import events_to_voxel_torch, \
     events_to_neg_pos_voxel_torch, binary_search_torch_tensor, events_to_image_torch, \
-    binary_search_h5_dset
+    binary_search_h5_dset, get_hot_event_mask, save_image
 from utils.util import read_json, write_json
 
 
@@ -101,8 +101,10 @@ class BaseVoxelDataset(Dataset):
         """
         raise NotImplementedError
 
+
     def __init__(self, data_path, transforms={}, sensor_resolution=None, num_bins=5,
-                 voxel_method=None, max_length=None, combined_voxel_channels=True):
+                 voxel_method=None, max_length=None, combined_voxel_channels=True,
+                 filter_hot_events=False):
         """
         self.transform applies to event voxels, frames and flow.
         self.vox_transform applies to event voxels only.
@@ -114,6 +116,7 @@ class BaseVoxelDataset(Dataset):
         self.sensor_resolution = sensor_resolution
         self.data_source_idx = -1
         self.has_flow = False
+        self.channels = self.num_bins if combined_voxel_channels else self.num_bins*2
 
         self.sensor_resolution, self.t0, self.tk, self.num_events, self.frame_ts, self.num_frames = \
             None, None, None, None, None, None
@@ -127,6 +130,17 @@ class BaseVoxelDataset(Dataset):
 
         self.num_pixels = self.sensor_resolution[0] * self.sensor_resolution[1]
         self.duration = self.tk - self.t0
+
+        if filter_hot_events:
+            secs_for_hot_mask = 0.2
+            hot_pix_percent = 0.01
+            hot_num = min(self.find_ts_index(secs_for_hot_mask+self.t0), self.num_events)
+            xs, ys, ts, ps = self.get_events(0, hot_num)
+            self.hot_events_mask = get_hot_event_mask(xs.astype(np.int), ys.astype(np.int), ps, self.sensor_resolution, num_hot=int(self.num_pixels*hot_pix_percent))
+            self.hot_events_mask = np.stack([self.hot_events_mask]*self.channels, axis=2).transpose(2,0,1)
+            self.hot_events_mask = torch.from_numpy(self.hot_events_mask).float()
+        else:
+            self.hot_events_mask = np.ones([self.channels, *self.sensor_resolution])
 
         if voxel_method is None:
             voxel_method = {'method': 'between_frames'}
@@ -310,6 +324,8 @@ class BaseVoxelDataset(Dataset):
             voxel_grid = events_to_neg_pos_voxel_torch(xs, ys, ts, ps, self.num_bins,
                                                        sensor_size=self.sensor_resolution)
             voxel_grid = torch.cat([voxel_grid[0], voxel_grid[1]], 0)
+
+        voxel_grid = voxel_grid*self.hot_events_mask 
 
         return voxel_grid
 
