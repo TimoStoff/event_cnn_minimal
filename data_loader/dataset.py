@@ -5,7 +5,7 @@ import torch
 import h5py
 import os
 # local modules
-from utils.data_augmentation import Compose, RobustNorm, LegacyNorm
+from utils.data_augmentation import *
 from utils.data import data_sources
 from events_contrast_maximization.utils.event_utils import events_to_voxel_torch, \
     events_to_neg_pos_voxel_torch, binary_search_torch_tensor, events_to_image_torch, \
@@ -517,3 +517,95 @@ class MemMapDataset(BaseVoxelDataset):
                 data_source = 'unknown'
                 self.sensor_resolution = self.infer_resolution()
                 print("Inferred sensor resolution: {}".format(self.sensor_resolution))
+
+
+class SequenceDataset(Dataset):
+    """Load sequences of time-synchronized {event tensors + frames} from a folder."""
+    def __init__(self, data_root, sequence_length, dataset_type='MemMapDataset',
+            step_size=None, proba_pause_when_running=0.0,
+            proba_pause_when_paused=0.0, normalize_image=False,
+            noise_kwargs={}, hot_pixel_kwargs={}, dataset_kwargs={}):
+        self.L = sequence_length
+        self.step_size = step_size if step_size is not None else self.L
+        self.proba_pause_when_running = proba_pause_when_running
+        self.proba_pause_when_paused = proba_pause_when_paused
+        self.normalize_image = normalize_image
+        self.noise_kwargs = noise_kwargs
+        self.hot_pixel_kwargs = hot_pixel_kwargs
+
+        assert(self.L > 0)
+        assert(self.step_size > 0)
+
+        self.dataset = eval(dataset_type)(data_root, **dataset_kwargs)
+        if self.L >= self.dataset.length:
+            self.length = 0
+        else:
+            self.length = (self.dataset.length - self.L) // self.step_size + 1
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, i):
+        """ Returns a list containing synchronized events <-> frame pairs
+            [e_{i-L} <-> I_{i-L},
+             e_{i-L+1} <-> I_{i-L+1},
+            ...,
+            e_{i-1} <-> I_{i-1},
+            e_i <-> I_i]
+        """
+        assert(i >= 0)
+        assert(i < self.length)
+
+        # generate a random seed here, that we will pass to the transform function
+        # of each item, to make sure all the items in the sequence are transformed
+        # in the same way
+        seed = random.randint(0, 2**32)
+
+        # data augmentation: add random, virtual "pauses",
+        # i.e. zero out random event tensors and repeat the last frame
+        sequence = []
+
+        # add the first element (i.e. do not start with a pause)
+        k = 0
+        j = i * self.step_size
+        item = self.dataset.__getitem__(j, seed)
+        sequence.append(item)
+
+        paused = False
+        for n in range(self.L - 1):
+
+            # decide whether we should make a "pause" at this step
+            # the probability of "pause" is conditioned on the previous state (to encourage long sequences)
+            u = np.random.rand()
+            if paused:
+                probability_pause = self.proba_pause_when_paused
+            else:
+                probability_pause = self.proba_pause_when_running
+            paused = (u < probability_pause)
+
+            if paused:
+                # add a tensor filled with zeros, paired with the last frame
+                # do not increase the counter
+                item = self.dataset.__getitem__(j + k, seed)
+                item['events'].fill_(0.0)
+                if 'flow' in item:
+                    item['flow'].fill_(0.0)
+                sequence.append(item)
+            else:
+                # normal case: append the next item to the list
+                k += 1
+                item = self.dataset.__getitem__(j + k, seed)
+                sequence.append(item)
+            # add noise
+            if self.noise_kwargs:
+                item['events'] = add_noise_to_voxel(item['events'], **self.noise_kwargs)
+
+        # add hot pixels
+        if self.hot_pixel_kwargs:
+            add_hot_pixels_to_sequence_(sequence, **self.hot_pixel_kwargs)
+
+        # normalize image
+        if self.normalize_image:
+            normalize_image_sequence_(sequence, key='frame')
+        return sequence
+

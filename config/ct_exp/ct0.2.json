@@ -1,0 +1,115 @@
+{
+    "name": "ct0.2",
+    "n_gpu": 1,
+    "arch": {
+        "type": "E2VIDRecurrent",
+        "args": {
+            "unet_kwargs": {
+                "num_bins": 10,
+                "skip_type": "sum",
+                "recurrent_block_type": "convlstm",
+                "num_encoders": 3,
+                "base_num_channels": 32,
+                "num_residual_blocks": 2,
+                "use_upsample_conv": true,
+                "final_activation": "",
+                "norm": "none"
+            }
+        }
+    },
+    "data_loader": {
+        "type": "MemMapDataLoader",
+        "args": {
+            "data_file": "/home/timo/Data2/training_data/sim_eccv20/memmap/ct_range/ct_m0.2s0.03_vrange/data.txt",
+            "batch_size": 2,
+            "shuffle": true,
+            "num_workers": 8,
+            "pin_memory": true,
+            "sequence_kwargs": {
+                "sequence_length": 40,
+                "dataset_type": "MemMapDataset",
+                "proba_pause_when_running": 0.05,
+                "proba_pause_when_paused": 0.9,
+                "normalize_image": false,
+                "noise_kwargs": {
+                    "noise_std":0.1,
+                    "noise_fraction": 1.0
+                },
+                "hot_pixel_kwargs": {
+                    "hot_pixel_std": 0.1,
+                    "max_hot_pixel_fraction": 0.001
+                },
+                "dataset_kwargs": {
+                    "transforms": {
+                        "RandomCrop": {
+                            "size": 112
+                        },
+                        "RandomFlip": {}
+                    },
+                    "num_bins": 5,
+                    "combined_voxel_channels": false
+                }
+            }
+        }
+    },
+    "valid_data_loader": {
+        "type": "MemMapDataLoader",
+        "args": {
+            "data_file": "/home/timo/Data2/preprocessed_datasets/memmap/hqfd/data_file.txt",
+            "batch_size": 1,
+            "shuffle": false,
+            "num_workers": 1,
+            "pin_memory": true,
+            "sequence_kwargs": {
+                "sequence_length": 320,
+                "dataset_type": "MemMapDataset",
+                "normalize_image": true,
+                "dataset_kwargs": {
+                    "max_length": 320,
+                    "transforms": {
+                        "CenterCrop": {
+                            "size": 160
+                        }
+                    },
+                    "num_bins": 5,
+                    "combined_voxel_channels": false
+                }
+            }
+        }
+    },
+    "optimizer": {
+        "type": "Adam",
+        "args": {
+            "lr": 0.0001,
+            "weight_decay": 0,
+            "amsgrad": true
+        }
+    },
+    "loss_ftns": {
+        "perceptual_loss": {
+            "weight": 1.0,
+            "net": "vgg"
+        },
+        "temporal_consistency_loss": {
+            "L0": 2,
+            "weight": 2.0
+        }
+    },
+    "lr_scheduler": {
+        "type": "StepLR",
+        "args": {
+            "step_size": 50,
+            "gamma": 1.0
+        }
+    },
+    "trainer": {
+        "epochs": 200,
+        "save_dir": "/home/timo/Data2/results/training/ct_recon",
+        "save_period": 5,
+        "verbosity": 2,
+        "monitor": "min loss",
+        "num_previews": 4,
+        "val_num_previews": 8,
+        "tensorboard": true
+    }
+}
