@@ -138,9 +138,9 @@ class BaseVoxelDataset(Dataset):
             xs, ys, ts, ps = self.get_events(0, hot_num)
             self.hot_events_mask = get_hot_event_mask(xs.astype(np.int), ys.astype(np.int), ps, self.sensor_resolution, num_hot=int(self.num_pixels*hot_pix_percent))
             self.hot_events_mask = np.stack([self.hot_events_mask]*self.channels, axis=2).transpose(2,0,1)
-            self.hot_events_mask = torch.from_numpy(self.hot_events_mask).float()
         else:
             self.hot_events_mask = np.ones([self.channels, *self.sensor_resolution])
+        self.hot_events_mask = torch.from_numpy(self.hot_events_mask).float()
 
         if voxel_method is None:
             voxel_method = {'method': 'between_frames'}
