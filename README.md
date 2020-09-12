@@ -70,18 +70,18 @@ These models have not necessarily been quantitatively evaluated and are not nece
 If you wish to run these models, the flag `--update` is necessary, as the voxels are formed in a slightly different way in the updated models.
 Again, the models from the paper are the ones *without* the prefix 'update'.
 
-## Training code and dataset
-Training code will be released when this work is published.
+## Training dataset
+You will need to generate the training dataset yourself, using ESIM.
+TO find out how, please see the [training data generator repo](https://github.com/TimoStoff/esim_config_generator).
 
 # Citations
 Please cite the following if you decide to use this code in an academic context:
 ```
-@misc{stoffregen2020train,
-    title={How to Train Your Event Camera Neural Network},
+@Article{stoffregen2020eccv,
+    title={Reducing the Sim-to-Real Gap for Event Cameras},
     author={Timo Stoffregen and Cedric Scheerlinck and Davide Scaramuzza and Tom Drummond and Nick Barnes and Lindsay Kleeman and Robert Mahony},
-    year={2020},
-    eprint={2003.09078},
-    archivePrefix={arXiv},
-    primaryClass={cs.CV}
+    journal=eccv,
+    year=2020,
+    month=aug
 }
 ```
