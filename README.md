@@ -74,6 +74,16 @@ Again, the models from the paper are the ones *without* the prefix 'update'.
 You will need to generate the training dataset yourself, using ESIM.
 TO find out how, please see the [training data generator repo](https://github.com/TimoStoff/esim_config_generator).
 
+## Training
+To train a model, you need to create a config file (see `config/config.json` for an example).
+In this file, you need to set what model you would like to use (you can choose from several models from the literature such as EVFlowNet etc, see the files in `model/` for more.
+You also need to set the training parameters, the training data, the validation data and the output directory.
+To train the flow network and reconstruction network from the paper, see `config/flow.json` and `config/reconstruction.json` respectively.
+You can then start the training by invoking
+```python train.py --config path/to/config```
+If you have a model that would like to keep training from, you can use
+```python train.py --config path/to/config --resume /path/to/model.pth```
+
 # Citations
 Please cite the following if you decide to use this code in an academic context:
 ```
