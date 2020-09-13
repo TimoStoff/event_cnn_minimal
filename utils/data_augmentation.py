@@ -225,7 +225,6 @@ class RandomCrop(object):
     def get_params(x, output_size):
         w, h = x.shape[2], x.shape[1]
         th, tw = output_size
-        print("{}".format(x.shape))
         if th > h or tw > w:
             raise Exception("Input size {}x{} is less than desired cropped \
                     size {}x{} - input tensor shape = {}".format(w,h,tw,th,x.shape))

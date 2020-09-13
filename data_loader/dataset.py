@@ -126,7 +126,7 @@ class BaseVoxelDataset(Dataset):
         if self.sensor_resolution is None or self.has_flow is None or self.t0 is None \
                 or self.tk is None or self.num_events is None or self.frame_ts is None \
                 or self.num_frames is None:
-            raise Exception("Dataloader failed to intialize all required members")
+            raise Exception("Dataloader failed to intialize all required members ({})".format(self.data_path))
 
         self.num_pixels = self.sensor_resolution[0] * self.sensor_resolution[1]
         self.duration = self.tk - self.t0
@@ -196,9 +196,12 @@ class BaseVoxelDataset(Dataset):
             ps = torch.from_numpy(ps.astype(np.float32))
             voxel = self.get_voxel_grid(xs, ys, ts, ps, combined_voxel_channels=self.combined_voxel_channels)
 
-        voxel = self.transform_voxel(voxel, seed)
+        voxel = self.transform_voxel(voxel, seed).float()
         dt = ts_k - ts_0
+        if dt == 0:
+            dt = np.array(0.0)
 
+        #print("Get voxel: event_t0={}, event_tk={}, image_ts={}".format(ts_0, ts_k, self.frame_ts[index]))
         if self.voxel_method['method'] == 'between_frames':
             frame = self.get_frame(index)
             frame = self.transform_frame(frame, seed)
@@ -211,13 +214,15 @@ class BaseVoxelDataset(Dataset):
             else:
                 flow = torch.zeros((2, frame.shape[-2], frame.shape[-1]), dtype=frame.dtype, device=frame.device)
 
+            timestamp = torch.tensor(self.frame_ts[index], dtype=torch.float64)
             item = {'frame': frame,
                     'flow': flow,
                     'events': voxel,
-                    'timestamp': torch.tensor(self.frame_ts[index], dtype=torch.float64),
+                    'timestamp': timestamp,
                     'data_source_idx': self.data_source_idx,
                     'dt': torch.tensor(dt, dtype=torch.float64)}
         else:
+            print("Not between")
             item = {'events': voxel,
                     'timestamp': torch.tensor(ts_k, dtype=torch.float64),
                     'data_source_idx': self.data_source_idx,
@@ -299,10 +304,11 @@ class BaseVoxelDataset(Dataset):
 
     def get_empty_voxel_grid(self, combined_voxel_channels=True):
         """Return an empty voxel grid filled with zeros"""
-        size = (self.num_bins, *self.sensor_resolution)
-        if not combined_voxel_channels:
-            size = (2, *size)
-        return torch.zeros(size)
+        if combined_voxel_channels:
+            size = (self.num_bins, *self.sensor_resolution)
+        else:
+            size = (2*self.num_bins, *self.sensor_resolution)
+        return torch.zeros(size, dtype=torch.float32)
 
     def get_voxel_grid(self, xs, ys, ts, ps, combined_voxel_channels=True):
         """
