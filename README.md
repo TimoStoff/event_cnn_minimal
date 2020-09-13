@@ -1,5 +1,5 @@
 # event_cnn_minimal
-Minimal code for running inference on models trained for ECCV'20.
+Minimal code for running inference on models trained for Reducing the Sim-to-Real Gap for Event Cameras, ECCV'20.
 
 # Running with [Anaconda](https://docs.anaconda.com/anaconda/install/)
 ```
@@ -66,7 +66,7 @@ Flow is saved as both a png showing HSV color as slow vectors and as npy files. 
 ![Color](.readme/color.gif)
 
 We provide some of our more recent models for download. These models are prefixed with _update_ (ie: update\_flow\_model.pth).
-These models have not necessarily been quantitatively evaluated and are not necessarily better than the models reported on in the preprint [How to Train Your Event Camera Neural Network](https://arxiv.org/abs/2003.09078).
+These models have not necessarily been quantitatively evaluated and are not necessarily better than the models reported on in the paper [Reducing the Sim-to-Real Gap for Event Cameras](https://arxiv.org/abs/2003.09078).
 If you wish to run these models, the flag `--update` is necessary, as the voxels are formed in a slightly different way in the updated models.
 Again, the models from the paper are the ones *without* the prefix 'update'.
 
