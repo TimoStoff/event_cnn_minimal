@@ -4,3 +4,6 @@
 [submodule "evaluation"]
 	path = evaluation
 	url = git@github.com:cedric-scheerlinck/evaluation.git
+[submodule "PerceptualSimilarity"]
+	path = PerceptualSimilarity
+	url = git@github.com:cedric-scheerlinck/PerceptualSimilarity.git

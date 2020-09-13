@@ -78,7 +78,6 @@ def main(args, model):
                       }
     if args.update:
         print("Updated style model")
-        dataset_kwargs['transforms'] = {'RobustNorm': {}}
         dataset_kwargs['combined_voxel_channels'] = False
 
     if args.legacy_norm:
@@ -96,6 +95,8 @@ def main(args, model):
     
     model.reset_states()
     for i, item in enumerate(tqdm(data_loader)):
+        if i > 1000:
+            break
         voxel = item['events'].to(device)
         if not args.color:
             voxel = crop.pad(voxel)

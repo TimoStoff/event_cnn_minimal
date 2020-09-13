@@ -5,7 +5,7 @@ import torch
 import h5py
 import os
 # local modules
-from utils.data_augmentation import Compose, RobustNorm, LegacyNorm
+from utils.data_augmentation import *
 from utils.data import data_sources
 from events_contrast_maximization.utils.event_utils import events_to_voxel_torch, \
     events_to_neg_pos_voxel_torch, binary_search_torch_tensor, events_to_image_torch, \
@@ -126,7 +126,7 @@ class BaseVoxelDataset(Dataset):
         if self.sensor_resolution is None or self.has_flow is None or self.t0 is None \
                 or self.tk is None or self.num_events is None or self.frame_ts is None \
                 or self.num_frames is None:
-            raise Exception("Dataloader failed to intialize all required members")
+            raise Exception("Dataloader failed to intialize all required members ({})".format(self.data_path))
 
         self.num_pixels = self.sensor_resolution[0] * self.sensor_resolution[1]
         self.duration = self.tk - self.t0
@@ -196,9 +196,12 @@ class BaseVoxelDataset(Dataset):
             ps = torch.from_numpy(ps.astype(np.float32))
             voxel = self.get_voxel_grid(xs, ys, ts, ps, combined_voxel_channels=self.combined_voxel_channels)
 
-        voxel = self.transform_voxel(voxel, seed)
+        voxel = self.transform_voxel(voxel, seed).float()
         dt = ts_k - ts_0
+        if dt == 0:
+            dt = np.array(0.0)
 
+        #print("Get voxel: event_t0={}, event_tk={}, image_ts={}".format(ts_0, ts_k, self.frame_ts[index]))
         if self.voxel_method['method'] == 'between_frames':
             frame = self.get_frame(index)
             frame = self.transform_frame(frame, seed)
@@ -211,13 +214,15 @@ class BaseVoxelDataset(Dataset):
             else:
                 flow = torch.zeros((2, frame.shape[-2], frame.shape[-1]), dtype=frame.dtype, device=frame.device)
 
+            timestamp = torch.tensor(self.frame_ts[index], dtype=torch.float64)
             item = {'frame': frame,
                     'flow': flow,
                     'events': voxel,
-                    'timestamp': torch.tensor(self.frame_ts[index], dtype=torch.float64),
+                    'timestamp': timestamp,
                     'data_source_idx': self.data_source_idx,
                     'dt': torch.tensor(dt, dtype=torch.float64)}
         else:
+            print("Not between")
             item = {'events': voxel,
                     'timestamp': torch.tensor(ts_k, dtype=torch.float64),
                     'data_source_idx': self.data_source_idx,
@@ -299,10 +304,11 @@ class BaseVoxelDataset(Dataset):
 
     def get_empty_voxel_grid(self, combined_voxel_channels=True):
         """Return an empty voxel grid filled with zeros"""
-        size = (self.num_bins, *self.sensor_resolution)
-        if not combined_voxel_channels:
-            size = (2, *size)
-        return torch.zeros(size)
+        if combined_voxel_channels:
+            size = (self.num_bins, *self.sensor_resolution)
+        else:
+            size = (2*self.num_bins, *self.sensor_resolution)
+        return torch.zeros(size, dtype=torch.float32)
 
     def get_voxel_grid(self, xs, ys, ts, ps, combined_voxel_channels=True):
         """
@@ -517,3 +523,95 @@ class MemMapDataset(BaseVoxelDataset):
                 data_source = 'unknown'
                 self.sensor_resolution = self.infer_resolution()
                 print("Inferred sensor resolution: {}".format(self.sensor_resolution))
+
+
+class SequenceDataset(Dataset):
+    """Load sequences of time-synchronized {event tensors + frames} from a folder."""
+    def __init__(self, data_root, sequence_length, dataset_type='MemMapDataset',
+            step_size=None, proba_pause_when_running=0.0,
+            proba_pause_when_paused=0.0, normalize_image=False,
+            noise_kwargs={}, hot_pixel_kwargs={}, dataset_kwargs={}):
+        self.L = sequence_length
+        self.step_size = step_size if step_size is not None else self.L
+        self.proba_pause_when_running = proba_pause_when_running
+        self.proba_pause_when_paused = proba_pause_when_paused
+        self.normalize_image = normalize_image
+        self.noise_kwargs = noise_kwargs
+        self.hot_pixel_kwargs = hot_pixel_kwargs
+
+        assert(self.L > 0)
+        assert(self.step_size > 0)
+
+        self.dataset = eval(dataset_type)(data_root, **dataset_kwargs)
+        if self.L >= self.dataset.length:
+            self.length = 0
+        else:
+            self.length = (self.dataset.length - self.L) // self.step_size + 1
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, i):
+        """ Returns a list containing synchronized events <-> frame pairs
+            [e_{i-L} <-> I_{i-L},
+             e_{i-L+1} <-> I_{i-L+1},
+            ...,
+            e_{i-1} <-> I_{i-1},
+            e_i <-> I_i]
+        """
+        assert(i >= 0)
+        assert(i < self.length)
+
+        # generate a random seed here, that we will pass to the transform function
+        # of each item, to make sure all the items in the sequence are transformed
+        # in the same way
+        seed = random.randint(0, 2**32)
+
+        # data augmentation: add random, virtual "pauses",
+        # i.e. zero out random event tensors and repeat the last frame
+        sequence = []
+
+        # add the first element (i.e. do not start with a pause)
+        k = 0
+        j = i * self.step_size
+        item = self.dataset.__getitem__(j, seed)
+        sequence.append(item)
+
+        paused = False
+        for n in range(self.L - 1):
+
+            # decide whether we should make a "pause" at this step
+            # the probability of "pause" is conditioned on the previous state (to encourage long sequences)
+            u = np.random.rand()
+            if paused:
+                probability_pause = self.proba_pause_when_paused
+            else:
+                probability_pause = self.proba_pause_when_running
+            paused = (u < probability_pause)
+
+            if paused:
+                # add a tensor filled with zeros, paired with the last frame
+                # do not increase the counter
+                item = self.dataset.__getitem__(j + k, seed)
+                item['events'].fill_(0.0)
+                if 'flow' in item:
+                    item['flow'].fill_(0.0)
+                sequence.append(item)
+            else:
+                # normal case: append the next item to the list
+                k += 1
+                item = self.dataset.__getitem__(j + k, seed)
+                sequence.append(item)
+            # add noise
+            if self.noise_kwargs:
+                item['events'] = add_noise_to_voxel(item['events'], **self.noise_kwargs)
+
+        # add hot pixels
+        if self.hot_pixel_kwargs:
+            add_hot_pixels_to_sequence_(sequence, **self.hot_pixel_kwargs)
+
+        # normalize image
+        if self.normalize_image:
+            normalize_image_sequence_(sequence, key='frame')
+        return sequence
+
