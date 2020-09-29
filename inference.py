@@ -29,6 +29,8 @@ def legacy_compatibility(args, checkpoint):
     elif args.firenet_legacy:
         args.legacy_norm = True
         final_activation = ''
+    else:
+        return args, checkpoint
     # Make compatible with Henri saved models
     if not isinstance(checkpoint.get('config', None), ConfigParser) or args.e2vid or args.firenet_legacy:
         checkpoint = make_henri_compatible(checkpoint, final_activation)
