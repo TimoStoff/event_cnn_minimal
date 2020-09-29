@@ -97,8 +97,6 @@ def main(args, model):
     
     model.reset_states()
     for i, item in enumerate(tqdm(data_loader)):
-        if i > 1000:
-            break
         voxel = item['events'].to(device)
         if not args.color:
             voxel = crop.pad(voxel)
